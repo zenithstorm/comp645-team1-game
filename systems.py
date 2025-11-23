@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-import os
 import random
 from typing import List, Optional, Tuple, Protocol, Any, Union, Callable
 
 import config
 import ui
-
-# Debug flag - set DEBUG=1 in environment to enable verbose debug output
-DEBUG = os.getenv("DEBUG", "0") == "1"
-
-def debug_print(message: str) -> None:
-    """Print debug message only if DEBUG flag is set."""
-    if DEBUG:
-        print(f"[DEBUG] {message}", flush=True)
 from models import (
     Action,
     DropResult,
@@ -265,16 +256,13 @@ class GameSystem:
             prefix: Prefix for the message (e.g., "rest", "potion", "attack")
             fallback_text: Fallback text if the LLM call fails
         """
-        if not DEBUG:
-            print("Story Teller is thinking...", end="", flush=True)
+        print("Story Teller is thinking...", end="", flush=True)
         try:
             description = storyteller_callable()
-            if not DEBUG:
-                print("\r" + " " * 30 + "\r", end="", flush=True)
+            print("\r" + " " * 30 + "\r", end="", flush=True)
             ui.show(self.storyteller, f"{prefix}: {description}")
         except Exception as e:
-            if not DEBUG:
-                print()
+            print()
             print(f"Error generating description: {e}", flush=True)
             ui.show(self.storyteller, f"{prefix}: {fallback_text}")
 
@@ -298,7 +286,6 @@ class GameSystem:
         return [item_name]
 
     def start_game(self) -> None:
-        debug_print("start_game() called")
         opening_text = """game:start: You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
 
 Faint torchlight flickers across toppled pillars and shattered glass — the remnants of the old sanctum where you had just retrieved the **Heart of Radiance**, a sacred relic.
@@ -311,9 +298,7 @@ Echoing goblin screams from the labyrinth below tell you where they fled to hide
 
 Weak but alive, you feel the quiet warmth of your connection to the Light. It has not abandoned you. Not yet."""
         ui.show(self.storyteller, opening_text)
-        debug_print("Entering game loop")
         while self.player.is_alive() and not self.game_won:
-            debug_print(f"Loop iteration - monster: {self.current_monster is not None}")
             if self.current_monster is None:
                 self._safe_phase()
             else:
@@ -333,21 +318,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         if self.player.health < self.player.max_health:
             menu.append(("Pray for restoration (full heal)", "pray"))
         titles = [title for title, _ in menu]
-        debug_print("About to call prompt_choice")
         idx = ui.prompt_choice(self.storyteller, "Choose your course:", titles)
-        debug_print(f"prompt_choice returned index: {idx}")
         selection = menu[idx][1]
-        debug_print(f"Selected: {selection}")
         if selection == "proceed":
-            debug_print("Calling _proceed_to_room()")
-            try:
-                self._proceed_to_room()
-                debug_print("Returned from _proceed_to_room()")
-            except Exception as e:
-                debug_print(f"Exception in _proceed_to_room(): {e}")
-                import traceback
-                traceback.print_exc()
-                raise
+            self._proceed_to_room()
         elif selection == "pray":
             self.player.pray_for_restoration()
             has_shield, has_sword, has_armor = self._get_player_equipment_state()
@@ -372,31 +346,23 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 ui.show(self.storyteller, f"potion: {description}")
 
     def _proceed_to_room(self) -> None:
-        debug_print("_proceed_to_room() called")
         room = self._weighted_room_choice()
-        debug_print(f"Room type: {room}")
         if room == "empty":
-            debug_print("Empty room")
-            if not DEBUG:
-                print("Story Teller is thinking...", end="", flush=True)
+            print("Story Teller is thinking...", end="", flush=True)
             try:
                 description = self.storyteller.describe_empty_room()
-                if not DEBUG:
-                    print("\r" + " " * 30 + "\r", end="", flush=True)
+                print("\r" + " " * 30 + "\r", end="", flush=True)
                 ui.show(self.storyteller, f"room: {description}")
             except Exception as e:
-                if not DEBUG:
-                    print()
+                print()
                 print(f"Error generating description: {e}", flush=True)
                 ui.show(self.storyteller, "room: A quiet space—no immediate threats or finds.")
             return
         if room == "loot":
-            debug_print("Loot room")
             drop = self.drop_calculator.roll_item_drop()
             # Generate narrative description of finding the loot
             has_shield, has_sword, has_armor = self._get_player_equipment_state()
-            if not DEBUG:
-                print("Story Teller is thinking...", end="", flush=True)
+            print("Story Teller is thinking...", end="", flush=True)
             try:
                 description = self.storyteller.describe_loot_find(
                     drop,
@@ -404,12 +370,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                     has_sword=has_sword,
                     has_armor=has_armor
                 )
-                if not DEBUG:
-                    print("\r" + " " * 30 + "\r", end="", flush=True)
+                print("\r" + " " * 30 + "\r", end="", flush=True)
                 ui.show(self.storyteller, f"loot: {description}")
             except Exception as e:
-                if not DEBUG:
-                    print()
+                print()
                 print(f"Error generating description: {e}", flush=True)
                 # Fallback to simple message
                 if drop == DropResult.NO_ITEM:
@@ -421,42 +385,31 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             self._apply_loot_silent(drop)
             return
         # Monster room
-        debug_print("Monster room - generating monster")
         # Get the drop for this monster
         drop = self.drop_calculator.get_drop_for_monster(self.defeated_monsters_count, self.player)
-        debug_print(f"Monster drop: {drop}")
         # Small chance to encounter the boss after some progress
         if self.defeated_monsters_count >= config.BOSS_SPAWN_THRESHOLD and self.random_provider.random() < config.BOSS_SPAWN_CHANCE:
-            debug_print("Generating boss")
             self.current_monster = self.monster_generator.generate_boss()
         else:
-            debug_print("Generating regular monster")
             self.current_monster = self.monster_generator.generate_monster()
-        debug_print(f"Monster generated: {self.current_monster.name}")
         # Store the drop on the monster
         self.current_monster.item_drop = drop
         # Generate full narrative encounter description from LLM
-        debug_print("Generating full encounter description...")
-        if not DEBUG:
-            print("Story Teller is thinking...", end="", flush=True)
+        print("Story Teller is thinking...", end="", flush=True)
         try:
             description = self.storyteller.describe_encounter(
                 self.current_monster.name,
                 self.current_monster.description,
                 drop if drop != DropResult.NO_ITEM else None
             )
-            if not DEBUG:
-                print("\r" + " " * 30 + "\r", end="", flush=True)
-            debug_print(f"Encounter description generated: {description[:50]}...")
+            print("\r" + " " * 30 + "\r", end="", flush=True)
         except Exception as e:
-            if not DEBUG:
-                print()
+            print()
             print(f"Error generating description: {e}", flush=True)
             import traceback
             traceback.print_exc()
             description = f"You encounter {self.current_monster.name}. {self.current_monster.description}"
         ui.show(self.storyteller, f"encounter: {description}")
-        debug_print("Encounter message shown, returning")
 
     def _weighted_room_choice(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS
