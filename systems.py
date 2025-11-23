@@ -17,7 +17,7 @@ from models import (
 class StoryTellerProtocol(Protocol):
     # OO rationale: Behavioral contract for narrative providers. Allows the
     # game loop to depend on an interface instead of a concrete type.
-    def get_current_description(self, context: str) -> str: ...
+    def track_event(self, event_type: str, description: str) -> None: ...
     def describe_item_in_context(self, item: Union[DropResult, str], monster_name: str, monster_description: str) -> str: ...
 
 class RandomProvider(Protocol):
@@ -231,40 +231,30 @@ class GameSystem:
         self.defeated_monsters_count: int = 0
         self.game_won: bool = False
 
-    def _get_player_equipment_state(self) -> Tuple[bool, bool, bool]:
-        """Get player's current equipment state.
-
-        Returns:
-            Tuple of (has_shield, has_sword, has_armor)
-        """
-        return (
-            self.player.has_shield,
-            self.player.has_sword,
-            len(self.player.owned_armor) > 0
-        )
-
     def _call_storyteller_with_loading(
         self,
         storyteller_callable: Callable[[], str],
-        prefix: str,
+        event_type: Optional[str],
         fallback_text: str
     ) -> None:
         """Helper to call storyteller methods with loading message and error handling.
 
         Args:
             storyteller_callable: A callable that returns the description string
-            prefix: Prefix for the message (e.g., "rest", "potion", "attack")
+            event_type: Type of event to track (e.g., "encounter", "victory", "loot") or None to skip tracking
             fallback_text: Fallback text if the LLM call fails
         """
         print("Story Teller is thinking...", end="", flush=True)
         try:
             description = storyteller_callable()
             print("\r" + " " * 30 + "\r", end="", flush=True)
-            ui.show(self.storyteller, f"{prefix}: {description}")
+            if event_type:
+                self.storyteller.track_event(event_type, description)
+            ui.show(self.storyteller, description)
         except Exception as e:
             print()
             print(f"Error generating description: {e}", flush=True)
-            ui.show(self.storyteller, f"{prefix}: {fallback_text}")
+            ui.show(self.storyteller, fallback_text)
 
     def _collect_items_acquired(self, monster: Monster) -> List[str]:
         """Collect all items that will be acquired after defeating a monster.
@@ -286,7 +276,7 @@ class GameSystem:
         return [item_name]
 
     def start_game(self) -> None:
-        opening_text = """game:start: You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
+        opening_text = """You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
 
 Faint torchlight flickers across toppled pillars and shattered glass — the remnants of the old sanctum where you had just retrieved the **Heart of Radiance**, a sacred relic.
 
@@ -297,6 +287,7 @@ Without the map's guiding spell, the sanctum's halls — once woven with radiant
 Echoing goblin screams from the labyrinth below tell you where they fled to hide, but in doing so, they awakened creatures far worse.
 
 Weak but alive, you feel the quiet warmth of your connection to the Light. It has not abandoned you. Not yet."""
+        self.storyteller.track_event("game_start", opening_text)
         ui.show(self.storyteller, opening_text)
         while self.player.is_alive() and not self.game_won:
             if self.current_monster is None:
@@ -304,16 +295,20 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             else:
                 self._combat_phase()
         if self.game_won:
-            ui.show(self.storyteller, "game:victory: The last foe falls; somewhere, an exit reveals itself.")
+            victory_text = "The last foe falls; somewhere, an exit reveals itself."
+            self.storyteller.track_event("game_victory", victory_text)
+            ui.show(self.storyteller, victory_text)
         else:
-            ui.show(self.storyteller, "game:over: Your journey ends here; the dark grows still.")
+            game_over_text = "Your journey ends here; the dark grows still."
+            self.storyteller.track_event("game_over", game_over_text)
+            ui.show(self.storyteller, game_over_text)
 
     # =====================
     # Safe / Pre-combat
     # =====================
     def _safe_phase(self) -> None:
         status = self._status_text()
-        ui.show(self.storyteller, f"status:\n{status}")
+        ui.show(self.storyteller, status)
         menu: List[Tuple[str, str]] = [("Proceed onward", "proceed")]
         if self.player.health < self.player.max_health:
             menu.append(("Pray for restoration (full heal)", "pray"))
@@ -323,27 +318,20 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         if selection == "proceed":
             self._proceed_to_room()
         elif selection == "pray":
-            self.player.pray_for_restoration()
-            has_shield, has_sword, has_armor = self._get_player_equipment_state()
             self._call_storyteller_with_loading(
-                lambda: self.storyteller.describe_pray(
-                    has_shield=has_shield,
-                    has_sword=has_sword,
-                    has_armor=has_armor
-                ),
-                "rest",
+                lambda: self.storyteller.describe_pray(self.player),
+                None,  # Don't track prayer as a significant event
                 "You pause to recover; breath steadies and wounds close."
             )
-        else:  # "potion"
-            if self.player.use_potion():
-                self._call_storyteller_with_loading(
-                    lambda: self.storyteller.describe_potion_use(True),
-                    "potion",
-                    "You use a potion and restore full health."
-                )
-            else:
-                description = self.storyteller.describe_potion_use(False)
-                ui.show(self.storyteller, f"potion: {description}")
+            self.player.pray_for_restoration()
+        elif selection == "potion":
+            self._call_storyteller_with_loading(
+                lambda: self.storyteller.describe_potion_use(self.player),
+                None,  # Don't track potion use as a significant event
+                "You use a potion and restore full health."
+            )
+        else:
+            raise ValueError(f"Invalid selection: {selection}")
 
     def _proceed_to_room(self) -> None:
         room = self._weighted_room_choice()
@@ -352,35 +340,34 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             try:
                 description = self.storyteller.describe_empty_room()
                 print("\r" + " " * 30 + "\r", end="", flush=True)
-                ui.show(self.storyteller, f"room: {description}")
+                ui.show(self.storyteller, description)
             except Exception as e:
                 print()
                 print(f"Error generating description: {e}", flush=True)
-                ui.show(self.storyteller, "room: A quiet space—no immediate threats or finds.")
+                ui.show(self.storyteller, "A quiet space—no immediate threats or finds.")
             return
         if room == "loot":
             drop = self.drop_calculator.roll_item_drop()
             # Generate narrative description of finding the loot
-            has_shield, has_sword, has_armor = self._get_player_equipment_state()
             print("Story Teller is thinking...", end="", flush=True)
             try:
-                description = self.storyteller.describe_loot_find(
-                    drop,
-                    has_shield=has_shield,
-                    has_sword=has_sword,
-                    has_armor=has_armor
-                )
+                if drop == DropResult.NO_ITEM:
+                    description = self.storyteller.describe_empty_room()
+                else:
+                    description = self.storyteller.describe_loot_find(drop, self.player)
                 print("\r" + " " * 30 + "\r", end="", flush=True)
-                ui.show(self.storyteller, f"loot: {description}")
+                self.storyteller.track_event("loot", description)
+                ui.show(self.storyteller, description)
             except Exception as e:
                 print()
                 print(f"Error generating description: {e}", flush=True)
                 # Fallback to simple message
                 if drop == DropResult.NO_ITEM:
-                    ui.show(self.storyteller, "loot: No notable items found.")
+                    fallback = "No notable items found."
                 else:
                     item_name = drop.name.replace("_", " ").title() if drop != DropResult.SHIELD and drop != DropResult.SWORD else drop.name.replace("_", " ").title()
-                    ui.show(self.storyteller, f"loot: Found {item_name}.")
+                    fallback = f"Found {item_name}."
+                ui.show(self.storyteller, fallback)
             # Apply the loot after showing the description
             self._apply_loot_silent(drop)
             return
@@ -400,7 +387,8 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             description = self.storyteller.describe_encounter(
                 self.current_monster.name,
                 self.current_monster.description,
-                drop if drop != DropResult.NO_ITEM else None
+                drop if drop != DropResult.NO_ITEM else None,
+                self.player
             )
             print("\r" + " " * 30 + "\r", end="", flush=True)
         except Exception as e:
@@ -409,7 +397,8 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             import traceback
             traceback.print_exc()
             description = f"You encounter {self.current_monster.name}. {self.current_monster.description}"
-        ui.show(self.storyteller, f"encounter: {description}")
+        self.storyteller.track_event("encounter", description)
+        ui.show(self.storyteller, description)
 
     def _weighted_room_choice(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS
@@ -429,13 +418,13 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             if chosen == Action.USE_POTION:
                 if self.player.use_potion():
                     self._call_storyteller_with_loading(
-                        lambda: self.storyteller.describe_potion_use(True),
-                        "potion",
+                        lambda: self.storyteller.describe_potion_use(self.player),
+                        None,  # Don't track potion use as a significant event
                         "You use a potion and restore full health."
                     )
                 else:
-                    description = self.storyteller.describe_potion_use(False)
-                    ui.show(self.storyteller, f"potion: {description}")
+                    description = self.storyteller.describe_potion_use(self.player)
+                    ui.show(self.storyteller, description)
             elif chosen == Action.FLEE:
                 success = self.player.attempt_flee(self.random_provider.random)
                 self._call_storyteller_with_loading(
@@ -468,8 +457,6 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                     monster_retaliation_damage = self.player.take_damage(incoming, defense=self.player.get_defense())
                     player_health_after = self.player.health
 
-                has_shield, has_sword, has_armor = self._get_player_equipment_state()
-
                 # Generate single narrative for the complete combat turn
                 if monster_died:
                     # If monster died, let victory handle the narrative (includes the killing blow)
@@ -486,12 +473,9 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                             self.current_monster.description,
                             damage_taken,
                             is_weakness,
-                            monster_died=False,
+                            self.player,
                             monster_retaliation_damage=monster_retaliation_damage,
-                            player_health_after=player_health_after,
-                            has_shield=has_shield,
-                            has_sword=has_sword,
-                            has_armor=has_armor
+                            player_health_after=player_health_after
                         ),
                         "combat",
                         f"Your {self._action_label(chosen).lower()} strikes for {damage_taken} damage. The enemy attacks for {monster_retaliation_damage} damage."
@@ -532,7 +516,6 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             is_weakness: Whether the final action was a weakness hit
         """
         items_acquired = self._collect_items_acquired(monster)
-        has_shield, has_sword, has_armor = self._get_player_equipment_state()
 
         # If we know the final action, include it in the victory description
         action_label = self._action_label(final_action) if final_action else None
@@ -542,9 +525,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 monster.name,
                 monster.description,
                 items_acquired,
-                has_shield=has_shield,
-                has_sword=has_sword,
-                has_armor=has_armor,
+                self.player,
                 final_action=action_label,
                 is_weakness=is_weakness
             ),
@@ -562,7 +543,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         self._apply_loot(drop)
 
     def _apply_loot_silent(self, drop: DropResult) -> None:
-        """Apply loot to player"""
+        """Apply loot to player silently (for loot rooms)."""
         if drop == DropResult.NO_ITEM:
             pass  # Nothing to apply
         elif drop == DropResult.HEALTH_POTION:
@@ -570,13 +551,39 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         elif drop == DropResult.ESCAPE_SCROLL:
             self.player.inventory.add_escape_scroll()
         elif drop == DropResult.SHIELD:
+            was_complete_before = self._has_all_gear()
             self.player.has_shield = True
-            ui.show(self.storyteller, "loot: Shield Bash unlocked")
+            ui.show(self.storyteller, "Shield Bash unlocked")
         elif drop == DropResult.SWORD:
+            was_complete_before = self._has_all_gear()
             self.player.has_sword = True
-            ui.show(self.storyteller, "loot: Sword Slash unlocked")
+            ui.show(self.storyteller, "Sword Slash unlocked")
         else:
+            was_complete_before = self._has_all_gear()
             self.player.add_armor_piece(drop)
+            if not was_complete_before and self._has_all_gear():
+                self._show_all_gear_recovered_message()
+
+    def _has_all_gear(self) -> bool:
+        """Check if the player has recovered all their stolen gear."""
+        all_gear = DropResult.unique_gear()
+        if not self.player.has_shield or not self.player.has_sword:
+            return False
+        # Check if player has all 6 armor pieces
+        armor_pieces = [item for item in all_gear if item not in (DropResult.SHIELD, DropResult.SWORD)]
+        return len(self.player.owned_armor) == len(armor_pieces)
+
+    def _show_all_gear_recovered_message(self) -> None:
+        """Show a special narrative when the player recovers all their gear."""
+        print("Story Teller is thinking...", end="", flush=True)
+        try:
+            description = self.storyteller.describe_all_gear_recovered(self.player)
+            print("\r" + " " * 30 + "\r", end="", flush=True)
+            ui.show(self.storyteller, description)
+        except Exception as e:
+            print()
+            print(f"Error generating description: {e}", flush=True)
+            ui.show(self.storyteller, "You have recovered all of your stolen gear! Only the Heart of Radiance remains to be recovered from the final boss.")
 
     def _apply_loot(self, drop: DropResult) -> None:
         """Apply loot to player and show narrative message (for post-combat loot)."""
@@ -589,13 +596,18 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         elif drop == DropResult.ESCAPE_SCROLL:
             self.player.inventory.add_escape_scroll()
         elif drop == DropResult.SHIELD:
+            was_complete_before = self._has_all_gear()
             self.player.has_shield = True
-            ui.show(self.storyteller, "loot: Shield Bash unlocked")
+            ui.show(self.storyteller, "Shield Bash unlocked")
         elif drop == DropResult.SWORD:
+            was_complete_before = self._has_all_gear()
             self.player.has_sword = True
-            ui.show(self.storyteller, "loot: Sword Slash unlocked")
+            ui.show(self.storyteller, "Sword Slash unlocked")
         else:
+            was_complete_before = self._has_all_gear()
             self.player.add_armor_piece(drop)
+            if not was_complete_before and self._has_all_gear():
+                self._show_all_gear_recovered_message()
 
     def _status_text(self) -> str:
         hp = f"HP {self.player.health}/{self.player.max_health}"

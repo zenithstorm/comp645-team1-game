@@ -10,9 +10,9 @@ from typing import Union, List, Optional
 
 # Handle both package and direct imports
 try:
-    from .models import DropResult
+    from .models import DropResult, Player
 except ImportError:
-    from models import DropResult
+    from models import DropResult, Player
 
 
 class LLMStoryTeller:
@@ -106,25 +106,20 @@ class LLMStoryTeller:
             # Re-raise other errors
             raise
 
-    def add_game_event(self, event_text: str) -> None:
+    def track_event(self, event_type: str, description: str) -> None:
         """Add a game event to the conversation history so the LLM remembers it.
 
         Args:
-            event_text: Description of what happened in the game (e.g., "encounter: Enemy spotted: Skeleton")
+            event_type: Type of event (e.g., "encounter", "victory", "loot", "game_start", "game_victory", "game_over")
+            description: Description of what happened
         """
-        # Extract meaningful events (skip status updates, etc.)
-        if event_text.startswith(("encounter:", "victory:", "loot:", "game:")):
+        # Only track significant events (skip status updates, etc.)
+        significant_events = {"encounter", "victory", "loot", "game_start", "game_victory", "game_over"}
+        if event_type in significant_events:
             self.conversation_history.append({
                 "role": "assistant",
-                "content": event_text
+                "content": f"{event_type}: {description}"
             })
-
-    def get_current_description(self, context: str) -> str:
-        """Format context text and optionally add to conversation history."""
-        # Add significant events to history
-        if context.startswith(("encounter:", "victory:", "loot:", "game:", "attack:", "retaliation:", "potion:", "flee:", "rest:")):
-            self.add_game_event(context)
-        return context.strip()
 
     def describe_player_action(
         self,
@@ -132,10 +127,8 @@ class LLMStoryTeller:
         monster_name: str,
         monster_description: str,
         damage: int,
-        is_weakness: bool = False,
-        has_shield: bool = False,
-        has_sword: bool = False,
-        has_armor: bool = False
+        player: Player,
+        is_weakness: bool = False
     ) -> str:
         """Generate narrative description of a player's combat action.
 
@@ -144,12 +137,10 @@ class LLMStoryTeller:
             monster_name: Name of the monster
             monster_description: Description of the monster
             damage: Damage dealt
+            player: The player object
             is_weakness: Whether this was a weakness hit
-            has_shield: Whether the player has a shield
-            has_sword: Whether the player has a sword
-            has_armor: Whether the player has any armor pieces
         """
-        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        player_context = self._get_player_context(player)
         weakness_text = " The creature is particularly vulnerable to this attack!" if is_weakness else ""
 
         prompt = f"""A holy knight/paladin is in combat with:
@@ -189,12 +180,9 @@ Write only the description, no quotes or labels:"""
         monster_description: str,
         player_damage: int,
         is_weakness: bool,
-        monster_died: bool,
+        player: Player,
         monster_retaliation_damage: Optional[int] = None,
-        player_health_after: Optional[int] = None,
-        has_shield: bool = False,
-        has_sword: bool = False,
-        has_armor: bool = False
+        player_health_after: Optional[int] = None
     ) -> str:
         """Generate narrative description of a complete combat turn (player action + monster response).
 
@@ -204,19 +192,14 @@ Write only the description, no quotes or labels:"""
             monster_description: Description of the monster
             player_damage: Damage dealt by the player
             is_weakness: Whether the player's attack was a weakness hit
-            monster_died: Whether the monster died from this attack
+            player: The player object
             monster_retaliation_damage: Damage dealt by monster's retaliation (None if monster died)
             player_health_after: Player's health after monster's attack (None if monster died)
-            has_shield: Whether the player has a shield
-            has_sword: Whether the player has a sword
-            has_armor: Whether the player has any armor pieces
         """
-        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        player_context = self._get_player_context(player)
         weakness_text = " The creature is particularly vulnerable to this attack!" if is_weakness else ""
 
-        retaliation_text = ""
-        if not monster_died and monster_retaliation_damage is not None:
-            retaliation_text = f"\n\nAfter the attack, the {monster_name} retaliates, dealing {monster_retaliation_damage} damage. The player's remaining health is {player_health_after}."
+        retaliation_text = f"\n\nAfter the attack, the {monster_name} retaliates, dealing {monster_retaliation_damage} damage. The player's remaining health is {player_health_after}."
 
         prompt = f"""A holy knight/paladin is in combat with:
 - Monster: {monster_name}
@@ -226,7 +209,7 @@ Write only the description, no quotes or labels:"""
 
 The player uses: {action}
 Damage dealt: {player_damage}{weakness_text}
-{'The monster is defeated by this attack!' if monster_died else 'The monster survives and retaliates.'}
+The monster survives and retaliates.
 {retaliation_text}
 
 Write a vivid 2-4 sentence description of this complete combat exchange. Describe:
@@ -342,31 +325,21 @@ Write only the description, with no quotes or labels:
     def describe_loot_find(
         self,
         item: DropResult,
-        has_shield: bool = False,
-        has_sword: bool = False,
-        has_armor: bool = False
+        player: Player
     ) -> str:
         """Generate narrative description of finding loot in a room.
 
         Args:
             item: The item found (DropResult)
-            has_shield: Whether the player has a shield
-            has_sword: Whether the player has a sword
-            has_armor: Whether the player has any armor pieces
+            player: The player object
 
         Returns:
             A vivid description of finding the item.
         """
-        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        player_context = self._get_player_context(player)
 
         # Format item name
-        if item == DropResult.SHIELD:
-            item_name = "your shield"
-            item_type = "player's stolen gear (shield)"
-        elif item == DropResult.SWORD:
-            item_name = "your sword"
-            item_type = "player's stolen gear (sword)"
-        elif item in DropResult.armor_pieces():
+        if item in DropResult.unique_gear():
             item_name = item.name.replace("_", " ").lower()
             item_type = f"player's stolen gear ({item_name})"
         elif item == DropResult.HEALTH_POTION:
@@ -376,25 +349,12 @@ Write only the description, with no quotes or labels:
             item_name = "an escape scroll"
             item_type = "an escape scroll (regular loot)"
         else:
-            item_name = "nothing"
-            item_type = "no items"
+            raise ValueError(f"Unexpected item type: {item}")
 
-        if item == DropResult.NO_ITEM:
-            prompt = f"""A holy knight/paladin searches a room in the dungeon but finds nothing of note.
+        is_player_gear = item in DropResult.unique_gear()
+        gear_context = " This is the player's own stolen equipment that was taken from them during an ambush. Describe it as high-quality holy knight gear." if is_player_gear else " This is regular loot the player finds."
 
-{player_context}
-
-Write a brief 1-2 sentence description of finding nothing. Be atmospheric and immersive.
-
-Example style:
-"You search the room carefully, but find only dust and decay. Nothing of value remains here."
-
-Write only the description, no quotes or labels:"""
-        else:
-            is_player_gear = item in (DropResult.SHIELD, DropResult.SWORD) or item in DropResult.armor_pieces()
-            gear_context = " This is the player's own stolen equipment that was taken from them during an ambush. Describe it as high-quality holy knight gear." if is_player_gear else " This is regular loot the player finds."
-
-            prompt = f"""A holy knight/paladin searches a room in the dungeon and finds: {item_type}
+        prompt = f"""A holy knight/paladin searches a room in the dungeon and finds: {item_type}
 
 {player_context}
 {gear_context}
@@ -426,9 +386,7 @@ Write only the description, no quotes or labels:"""
         monster_name: str,
         monster_description: str,
         items_acquired: List[str],
-        has_shield: bool = False,
-        has_sword: bool = False,
-        has_armor: bool = False,
+        player: Player,
         final_action: Optional[str] = None,
         is_weakness: bool = False
     ) -> str:
@@ -438,13 +396,11 @@ Write only the description, no quotes or labels:"""
             monster_name: Name of the monster
             monster_description: Description of the monster
             items_acquired: List of items being acquired (e.g., ["a shield", "health potion"])
-            has_shield: Whether the player already has a shield (before acquiring new items)
-            has_sword: Whether the player already has a sword (before acquiring new items)
-            has_armor: Whether the player already has any armor pieces (before acquiring new items)
+            player: The player object (before acquiring new items)
             final_action: The action that killed the monster (e.g., "Holy Smite", "Shield Bash")
             is_weakness: Whether the final action was a weakness hit
         """
-        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        player_context = self._get_player_context(player)
         items_text = ""
         if items_acquired:
             if len(items_acquired) == 1:
@@ -487,28 +443,66 @@ Write only the description, no quotes or labels:"""
         })
         return description
 
-    def _get_player_context(self, has_shield: bool = False, has_sword: bool = False, has_armor: bool = False) -> str:
-        """Generate context string about the player's current equipment state."""
-        equipment = []
-        if not has_shield and not has_sword and not has_armor:
-            return "IMPORTANT: The player has NO armor, NO shield, and NO sword. All their gear was stolen by goblin bandits. They are wearing only basic clothing that might be worn under armor, not armor."
-        if has_shield:
-            equipment.append("shield")
-        if has_sword:
-            equipment.append("sword")
-        if has_armor:
-            equipment.append("armor")
-        return f"The player currently has: {', '.join(equipment)}. All other gear was stolen by goblin bandits."
+    def _get_player_gear_list(self, player: Player) -> List[str]:
+        """Get a list of all gear items the player currently has.
 
-    def describe_pray(self, has_shield: bool = False, has_sword: bool = False, has_armor: bool = False) -> str:
+        Returns:
+            List of gear item names (e.g., ["shield", "sword", "helm", "cuirass"])
+        """
+        gear_list = []
+        if player.has_shield:
+            gear_list.append("shield")
+        if player.has_sword:
+            gear_list.append("sword")
+        for armor_piece in player.owned_armor:
+            gear_list.append(armor_piece.name.replace("_", " ").lower())
+        return gear_list
+
+    def _has_all_gear(self, player: Player) -> bool:
+        """Check if the player has recovered all their stolen gear.
+
+        Returns:
+            True if player has shield, sword, and all 6 armor pieces
+        """
+        all_gear = DropResult.unique_gear()
+        if not player.has_shield or not player.has_sword:
+            return False
+        # Check if player has all 6 armor pieces
+        armor_pieces = [item for item in all_gear if item not in (DropResult.SHIELD, DropResult.SWORD)]
+        return len(player.owned_armor) == len(armor_pieces)
+
+    def _get_player_context(self, player: Player) -> str:
+        """Generate context string about the player's current equipment state and health."""
+        gear_list = self._get_player_gear_list(player)
+        has_all_gear = self._has_all_gear(player)
+
+        if len(gear_list) == 0:
+            equipment_text = "IMPORTANT: The player has NO armor, NO shield, and NO sword. All their gear was stolen by goblin bandits. They are wearing only basic clothing that might be worn under armor, not armor."
+        elif has_all_gear:
+            equipment_text = "The player has recovered ALL of their stolen gear: shield, sword, and all armor pieces. They are now fully equipped as a holy knight. Only the Heart of Radiance (the holy relic) remains to be recovered from the final boss."
+        else:
+            equipment_text = f"The player currently has: {', '.join(gear_list)}. They are still missing some of their stolen gear."
+
+        # Add health information
+        health_percent = (player.health / player.max_health) * 100
+        if health_percent <= 25:
+            health_status = "The player is critically injured and barely standing, moving with great difficulty."
+        elif health_percent <= 50:
+            health_status = "The player is badly wounded, moving slowly and with visible pain."
+        elif health_percent <= 75:
+            health_status = "The player is moderately injured but still capable of fighting."
+        else:
+            health_status = "The player is in good condition, with only minor wounds."
+
+        return f"{equipment_text}\n\nHealth: {player.health}/{player.max_health} HP. {health_status}"
+
+    def describe_pray(self, player: Player) -> str:
         """Generate narrative description of the player praying for restoration.
 
         Args:
-            has_shield: Whether the player has a shield
-            has_sword: Whether the player has a sword
-            has_armor: Whether the player has any armor pieces
+            player: The player object
         """
-        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        player_context = self._get_player_context(player)
         prompt = f"""A holy knight/paladin, injured and weary, kneels to pray for restoration.
 
 {player_context}
@@ -532,12 +526,47 @@ Write only the description, no quotes or labels:"""
         })
         return description
 
-    def describe_potion_use(self, had_potion: bool) -> str:
-        """Generate narrative description of using a health potion."""
-        if not had_potion:
-            return "You reach for a potion, but your inventory is empty. No healing awaits you."
+    def describe_all_gear_recovered(self, player: Player) -> str:
+        """Generate narrative description when the player recovers the final piece of gear.
 
-        prompt = """A holy knight/paladin drinks a health potion during combat or rest.
+        Args:
+            player: The player object (who has just recovered all gear)
+
+        Returns:
+            A vivid description of the moment of complete recovery.
+        """
+        player_context = self._get_player_context(player)
+
+        prompt = f"""A holy knight/paladin has just recovered the final piece of their stolen gear. They now have ALL of their equipment back: shield, sword, and all armor pieces.
+
+{player_context}
+
+Write a vivid 2-4 sentence description of this momentous occasion. The knight should feel a surge of hope and determination. They have recovered everything that was stolen from them - their complete holy knight's regalia. Now, only one thing remains: the Heart of Radiance, the sacred relic that the final boss holds. The knight should feel ready for the final confrontation, knowing that with all their gear restored, they can face the ultimate challenge.
+
+Be emotional and triumphant, but also focused on the final goal. This is a turning point in their journey.
+
+Example style:
+"You feel the weight of the final piece settle into place, and suddenly, you are whole again. Every piece of your stolen regalia has been reclaimed - your shield, your sword, your helm, your armor. The familiar weight of your complete holy knight's equipment fills you with a sense of purpose you haven't felt since the ambush. You stand tall, fully restored, and your gaze turns toward the deeper darkness where the final boss awaits. The Heart of Radiance calls to you, and you are ready to answer."
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        description = self._call_llm(messages, max_tokens=300)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"All gear recovered: {description}"
+        })
+        return description
+
+    def describe_potion_use(self, player: Player) -> str:
+        """Generate narrative description of using a health potion."""
+        player_context = self._get_player_context(player)
+
+        prompt = f"""A holy knight/paladin drinks a health potion during combat or rest.
+
+{player_context}
 
 Write a vivid 1-3 sentence description of drinking the potion. Describe the act of drinking, the taste, and the healing effect. Be atmospheric and immersive, like a dungeon master narrating item use.
 
@@ -582,7 +611,8 @@ Write only the description, no quotes or labels:"""
         self,
         monster_name: str,
         monster_description: str,
-        item: Optional[DropResult]
+        item: Optional[DropResult],
+        player: Player
     ) -> str:
         """Generate a full narrative encounter description like a dungeon master.
 
@@ -590,17 +620,19 @@ Write only the description, no quotes or labels:"""
             monster_name: Name of the monster (e.g., "Giant Rat")
             monster_description: Base description of the monster
             item: The item that will drop (None or NO_ITEM means no item)
+            player: The player object
 
         Returns:
             A full narrative description of the encounter scene.
         """
+        player_context = self._get_player_context(player)
         # Determine if item is player's stolen gear or monster's regular loot
         is_player_gear = False
         item_description = ""
 
         if item is not None and item != DropResult.NO_ITEM:
             # Player's stolen gear: shield, sword, and all armor pieces
-            if item in (DropResult.SHIELD, DropResult.SWORD) or item in DropResult.armor_pieces():
+            if item in DropResult.unique_gear():
                 is_player_gear = True
                 if item == DropResult.SHIELD:
                     item_description = "a shield"
@@ -626,6 +658,8 @@ Write only the description, no quotes or labels:"""
 Monster: {monster_name}
 Description: {monster_description}
 {f"Items present: {items_text}" if items_text else "No notable items visible."}
+
+{player_context}
 
 IMPORTANT: If the item is marked as "player's stolen holy knight gear" (shield, sword, or any armor piece), describe it as the player's own high-quality equipment that was stolen by goblin bandits. Use phrases like "your gleaming shield", "your blessed sword", "your ornate helm", etc. - these are the paladin's own gear, fit for a holy knight. If the item is marked as "regular loot" (potions, scrolls), describe it as something the monster naturally has or has scavenged.
 

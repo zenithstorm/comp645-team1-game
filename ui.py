@@ -3,18 +3,8 @@ from __future__ import annotations
 from typing import List
 
 
-def show(storyteller, context_text: str) -> None:
-    """Display text via storyteller decoration."""
-    # Strip prefixes like "encounter:", "game:start:", "status:", "loot:", "room:" before displaying
-    # These prefixes are used internally for LLM tracking but shouldn't be shown to users
-    text = storyteller.get_current_description(context_text)
-    # Remove common prefixes (format: "prefix: rest of text")
-    prefixes = ["encounter:", "game:start:", "game:victory:", "game:over:", "status:", "loot:", "room:", "rest:", "potion:", "attack:", "retaliation:", "flee:", "victory:"]
-    for prefix in prefixes:
-        if text.startswith(prefix):
-            # Remove prefix and any following whitespace
-            text = text[len(prefix):].lstrip()
-            break
+def show(storyteller, text: str) -> None:
+    """Display text to the user."""
     print(text, flush=True)
 
 
