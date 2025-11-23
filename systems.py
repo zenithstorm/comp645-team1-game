@@ -226,6 +226,8 @@ class GameSystem:
             strength=config.PLAYER_BASE_STRENGTH,
             base_defense=config.PLAYER_BASE_DEFENSE,
         )
+        # Player starts injured from the ambush
+        self.player.health = 10
         self.current_monster: Optional[Monster] = None
         self.drop_calculator = DropCalculator(self.random_provider)
         self.monster_generator = MonsterGenerator(self.random_provider)
@@ -287,12 +289,40 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 raise
         elif selection == "pray":
             self.player.pray_for_restoration()
-            ui.show(self.storyteller, "rest: You pause to recover; breath steadies and wounds close.")
+            if not DEBUG:
+                print("Story Teller is thinking...", end="", flush=True)
+            try:
+                description = self.storyteller.describe_pray(
+                    has_shield=self.player.has_shield,
+                    has_sword=self.player.has_sword,
+                    has_armor=len(self.player.owned_armor) > 0
+                )
+                if not DEBUG:
+                    print("\r" + " " * 30 + "\r", end="", flush=True)
+                ui.show(self.storyteller, f"rest: {description}")
+            except Exception as e:
+                if not DEBUG:
+                    print()
+                print(f"Error generating description: {e}", flush=True)
+                ui.show(self.storyteller, "rest: You pause to recover; breath steadies and wounds close.")
         else:  # "potion"
+            had_potion = self.player.inventory.num_potions > 0
             if self.player.use_potion():
-                ui.show(self.storyteller, "potion: You drink a vial and feel your strength return to full.")
+                if not DEBUG:
+                    print("Story Teller is thinking...", end="", flush=True)
+                try:
+                    description = self.storyteller.describe_potion_use(True)
+                    if not DEBUG:
+                        print("\r" + " " * 30 + "\r", end="", flush=True)
+                    ui.show(self.storyteller, f"potion: {description}")
+                except Exception as e:
+                    if not DEBUG:
+                        print()
+                    print(f"Error generating description: {e}", flush=True)
+                    ui.show(self.storyteller, "potion: You use a potion and restore full health.")
             else:
-                ui.show(self.storyteller, "potion: You check your supplies—no potions remain.")
+                description = self.storyteller.describe_potion_use(False)
+                ui.show(self.storyteller, f"potion: {description}")
 
     def _proceed_to_room(self) -> None:
         debug_print("_proceed_to_room() called")
@@ -300,7 +330,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         debug_print(f"Room type: {room}")
         if room == "empty":
             debug_print("Empty room")
-            ui.show(self.storyteller, "room: A quiet space—no immediate threats or finds.")
+            ui.show(self.storyteller, "room: A quiet space—no immediate threats or finds.") # TODO: make this a story teller narrative instead of a hardcoded string
             return
         if room == "loot":
             debug_print("Loot room")
@@ -377,27 +407,78 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             selected_index = ui.prompt_choice(self.storyteller, "In battle, choose your action:", option_titles)
             chosen = combat_options[selected_index]
             if chosen == Action.USE_POTION:
+                had_potion = self.player.inventory.num_potions > 0
                 if self.player.use_potion():
-                    ui.show(self.storyteller, "potion: You use a potion and restore full health.")
+                    if not DEBUG:
+                        print("Story Teller is thinking...", end="", flush=True)
+                    try:
+                        description = self.storyteller.describe_potion_use(True)
+                        if not DEBUG:
+                            print("\r" + " " * 30 + "\r", end="", flush=True)
+                        ui.show(self.storyteller, f"potion: {description}")
+                    except Exception as e:
+                        if not DEBUG:
+                            print()
+                        print(f"Error generating description: {e}", flush=True)
+                        ui.show(self.storyteller, "potion: You use a potion and restore full health.")
                 else:
-                    ui.show(self.storyteller, "potion: No potions available.")
+                    description = self.storyteller.describe_potion_use(False)
+                    ui.show(self.storyteller, f"potion: {description}")
             elif chosen == Action.FLEE:
                 success = self.player.attempt_flee(self.random_provider.random)
+                if not DEBUG:
+                    print("Story Teller is thinking...", end="", flush=True)
+                try:
+                    description = self.storyteller.describe_flee(success, self.current_monster.name)
+                    if not DEBUG:
+                        print("\r" + " " * 30 + "\r", end="", flush=True)
+                    ui.show(self.storyteller, f"flee: {description}")
+                except Exception as e:
+                    if not DEBUG:
+                        print()
+                    print(f"Error generating description: {e}", flush=True)
+                    ui.show(self.storyteller, f"flee: {'You disengage and escape.' if success else 'You fail to break away.'}")
                 if success:
-                    ui.show(self.storyteller, "flee: You disengage and escape.")
                     self.current_monster = None
                     return
-                else:
-                    ui.show(self.storyteller, "flee: You fail to break away.")
             else:
+                # Combat action (Holy Smite, Shield Bash, Sword Slash)
+                ability_map = self.player.abilities()
+                base_damage = ability_map[chosen]()
                 damage_amount = self._calculate_player_damage(chosen, self.current_monster)
+                # Check if it's a weakness hit (damage is higher than base due to weakness bonus)
+                action_to_weakness = {
+                    Action.HOLY_SMITE: Weakness.HOLY_SMITE,
+                    Action.SWORD_SLASH: Weakness.SWORD_SLASH,
+                    Action.SHIELD_BASH: Weakness.SHIELD_BASH,
+                }
+                weakness_for_action = action_to_weakness.get(chosen)
+                is_weakness = (weakness_for_action is not None and
+                              weakness_for_action in self.current_monster.weaknesses and
+                              damage_amount > base_damage)
                 damage_taken = self.current_monster.take_damage(damage_amount)
-                ui.show(
-                    self.storyteller,
-                    f"attack: Your {self._action_label(chosen).lower()} strikes for {damage_taken} damage.",
-                )
+                if not DEBUG:
+                    print("Story Teller is thinking...", end="", flush=True)
+                try:
+                    description = self.storyteller.describe_player_action(
+                        self._action_label(chosen),
+                        self.current_monster.name,
+                        self.current_monster.description,
+                        damage_taken,
+                        is_weakness,
+                        has_shield=self.player.has_shield,
+                        has_sword=self.player.has_sword,
+                        has_armor=len(self.player.owned_armor) > 0
+                    )
+                    if not DEBUG:
+                        print("\r" + " " * 30 + "\r", end="", flush=True)
+                    ui.show(self.storyteller, f"attack: {description}")
+                except Exception as e:
+                    if not DEBUG:
+                        print()
+                    print(f"Error generating description: {e}", flush=True)
+                    ui.show(self.storyteller, f"attack: Your {self._action_label(chosen).lower()} strikes for {damage_taken} damage.")
                 if not self.current_monster.is_alive():
-                    ui.show(self.storyteller, "victory: Enemy defeated.")
                     self.defeated_monsters_count += 1
                     self._post_fight_rewards(self.current_monster)
                     self.current_monster = None
@@ -407,10 +488,26 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             if self.current_monster and self.current_monster.is_alive():
                 incoming = self.current_monster.attack()
                 reduced = self.player.take_damage(incoming, defense=self.player.get_defense())
-                ui.show(
-                    self.storyteller,
-                    f"retaliation: The enemy attacks for {reduced} damage.",
-                )
+                if not DEBUG:
+                    print("Story Teller is thinking...", end="", flush=True)
+                try:
+                    description = self.storyteller.describe_monster_attack(
+                        self.current_monster.name,
+                        self.current_monster.description,
+                        reduced,
+                        self.player.health,
+                        has_shield=self.player.has_shield,
+                        has_sword=self.player.has_sword,
+                        has_armor=len(self.player.owned_armor) > 0
+                    )
+                    if not DEBUG:
+                        print("\r" + " " * 30 + "\r", end="", flush=True)
+                    ui.show(self.storyteller, f"retaliation: {description}")
+                except Exception as e:
+                    if not DEBUG:
+                        print()
+                    print(f"Error generating description: {e}", flush=True)
+                    ui.show(self.storyteller, f"retaliation: The enemy attacks for {reduced} damage.")
 
     def _combat_options(self) -> List[Action]:
         options: List[Action] = list(self.player.abilities().keys())
@@ -437,9 +534,42 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         return monster.apply_weakness_bonus(action, base)
 
     def _post_fight_rewards(self, monster: Monster) -> None:
+        # Collect items that will be acquired
+        items_acquired = []
+        # Check for unlocks
+        pending_unlocks = self.progression.get_pending_unlocks(self.defeated_monsters_count, self.player)
+        if "shield" in pending_unlocks:
+            items_acquired.append("a shield")
+        if "sword" in pending_unlocks:
+            items_acquired.append("a sword")
+        # Check for guaranteed drop
+        if monster.guaranteed_drop is not None and monster.guaranteed_drop != DropResult.NO_ITEM:
+            item_name = monster.guaranteed_drop.name.replace("_", " ").lower()
+            items_acquired.append(item_name)
+
+        # Generate victory description
+        if not DEBUG:
+            print("Story Teller is thinking...", end="", flush=True)
+        try:
+            victory_desc = self.storyteller.describe_victory(
+                monster.name,
+                monster.description,
+                items_acquired,
+                has_shield=self.player.has_shield,
+                has_sword=self.player.has_sword,
+                has_armor=len(self.player.owned_armor) > 0
+            )
+            if not DEBUG:
+                print("\r" + " " * 30 + "\r", end="", flush=True)
+            ui.show(self.storyteller, f"victory: {victory_desc}")
+        except Exception as e:
+            if not DEBUG:
+                print()
+            print(f"Error generating description: {e}", flush=True)
+            ui.show(self.storyteller, "victory: Enemy defeated.")
+
         # If boss is defeated, end the run with victory.
         if monster.is_boss:
-            ui.show(self.storyteller, "victory: The boss is defeated.")
             self.game_won = True
             return
         # Scripted unlocks

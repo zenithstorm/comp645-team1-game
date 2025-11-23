@@ -63,9 +63,397 @@ class LLMStoryTeller:
     def get_current_description(self, context: str) -> str:
         """Format context text and optionally add to conversation history."""
         # Add significant events to history
-        if context.startswith(("encounter:", "victory:", "loot:", "game:")):
+        if context.startswith(("encounter:", "victory:", "loot:", "game:", "attack:", "retaliation:", "potion:", "flee:", "rest:")):
             self.add_game_event(context)
         return context.strip()
+
+    def describe_player_action(
+        self,
+        action: str,
+        monster_name: str,
+        monster_description: str,
+        damage: int,
+        is_weakness: bool = False,
+        has_shield: bool = False,
+        has_sword: bool = False,
+        has_armor: bool = False
+    ) -> str:
+        """Generate narrative description of a player's combat action.
+        
+        Args:
+            action: The action name (e.g., "Holy Smite", "Shield Bash", "Sword Slash")
+            monster_name: Name of the monster
+            monster_description: Description of the monster
+            damage: Damage dealt
+            is_weakness: Whether this was a weakness hit
+            has_shield: Whether the player has a shield
+            has_sword: Whether the player has a sword
+            has_armor: Whether the player has any armor pieces
+        """
+        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        weakness_text = " The creature is particularly vulnerable to this attack!" if is_weakness else ""
+        
+        prompt = f"""A holy knight/paladin is in combat with:
+- Monster: {monster_name}
+- Description: {monster_description}
+
+{player_context}
+
+The player uses: {action}
+Damage dealt: {damage}{weakness_text}
+
+Write a vivid 2-3 sentence description of how this action unfolds. Describe the holy knight's movements, the divine power or weapon, and the impact on the monster. Be cinematic and immersive, like a dungeon master narrating combat.
+
+IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing/robes, not armor.
+
+Examples:
+- For Holy Smite (no equipment): "You raise your hand, calling upon the Light. Divine radiance blazes forth, striking the creature with searing holy energy. The monster recoils as the sacred power burns through its form."
+- For Shield Bash (has shield): "You surge forward, your shield leading the charge. The heavy impact sends the creature staggering backward, its balance broken by the weight of your righteous defense."
+- For Sword Slash (has sword): "Your blade arcs through the air, catching the torchlight. The steel finds its mark, cutting deep as you channel your strength into the strike."
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=100,
+                temperature=0.8,
+            )
+            description = response.choices[0].message.content.strip()
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"Player action ({action}): {description}"
+            })
+            return description
+        except Exception as e:
+            # Handle quota errors
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            if ("insufficient_quota" in error_str or
+                (error_type == "RateLimitError" and "quota" in error_str) or
+                ("429" in error_str and "quota" in error_str)):
+                print("\n" + "="*60)
+                print("Error: OpenAI API quota exceeded.")
+                print("="*60)
+                print("Your OpenAI account has run out of credits.")
+                print("Please check your account billing and add credits:")
+                print("  https://platform.openai.com/account/billing")
+                print("="*60)
+                import sys
+                sys.exit(1)
+            raise
+
+    def describe_monster_attack(
+        self,
+        monster_name: str,
+        monster_description: str,
+        damage: int,
+        player_health_after: int,
+        has_shield: bool = False,
+        has_sword: bool = False,
+        has_armor: bool = False
+    ) -> str:
+        """Generate narrative description of a monster's attack.
+        
+        Args:
+            monster_name: Name of the monster
+            monster_description: Description of the monster
+            damage: Damage dealt
+            player_health_after: Player's health after the attack
+            has_shield: Whether the player has a shield
+            has_sword: Whether the player has a sword
+            has_armor: Whether the player has any armor pieces
+        """
+        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        prompt = f"""A holy knight/paladin is being attacked by:
+- Monster: {monster_name}
+- Description: {monster_description}
+- Damage dealt: {damage}
+- Player's remaining health: {player_health_after}
+
+{player_context}
+
+Write a vivid 2-3 sentence description of the monster's attack. Describe how the creature strikes, the knight's reaction, and the impact. Be cinematic and immersive, like a dungeon master narrating combat.
+
+IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing/robes, not armor. If they don't have a shield, they can't raise a shield to block.
+
+Example style (no armor, no shield):
+"The creature lunges forward with surprising speed, claws raking across your robes. You try to dodge, but the force of the blow still finds its way through, leaving you winded and bleeding."
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=100,
+                temperature=0.8,
+            )
+            description = response.choices[0].message.content.strip()
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"Monster attack: {description}"
+            })
+            return description
+        except Exception as e:
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            if ("insufficient_quota" in error_str or
+                (error_type == "RateLimitError" and "quota" in error_str) or
+                ("429" in error_str and "quota" in error_str)):
+                print("\n" + "="*60)
+                print("Error: OpenAI API quota exceeded.")
+                print("="*60)
+                print("Your OpenAI account has run out of credits.")
+                print("Please check your account billing and add credits:")
+                print("  https://platform.openai.com/account/billing")
+                print("="*60)
+                import sys
+                sys.exit(1)
+            raise
+
+    def describe_victory(
+        self,
+        monster_name: str,
+        monster_description: str,
+        items_acquired: List[str],
+        has_shield: bool = False,
+        has_sword: bool = False,
+        has_armor: bool = False
+    ) -> str:
+        """Generate narrative description of defeating a monster.
+        
+        Args:
+            monster_name: Name of the monster
+            monster_description: Description of the monster
+            items_acquired: List of items being acquired (e.g., ["a shield", "health potion"])
+            has_shield: Whether the player already has a shield (before acquiring new items)
+            has_sword: Whether the player already has a sword (before acquiring new items)
+            has_armor: Whether the player already has any armor pieces (before acquiring new items)
+        """
+        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        items_text = ""
+        if items_acquired:
+            if len(items_acquired) == 1:
+                items_text = f" The creature had: {items_acquired[0]}"
+            else:
+                items_text = f" The creature had: {', '.join(items_acquired[:-1])}, and {items_acquired[-1]}"
+        
+        prompt = f"""A holy knight/paladin has just defeated:
+- Monster: {monster_name}
+- Description: {monster_description}
+{items_text}
+
+{player_context}
+
+Write a vivid 2-3 sentence description of the monster's defeat. Describe how it falls, the final moments, and if items are present, how the knight retrieves them. Be cinematic and immersive, like a dungeon master narrating victory.
+
+IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it or is acquiring it. If they don't have armor, describe them in simple clothing/robes, not armor.
+
+Example style:
+"The skeleton's bones rattle one last time as your holy smite shatters its form. It collapses in a heap of scattered bones, the dark magic animating it finally extinguished. You notice your shield clutched in its bony grasp and carefully retrieve it, feeling the familiar weight return to your arm."
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=120,
+                temperature=0.8,
+            )
+            description = response.choices[0].message.content.strip()
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"Victory over {monster_name}: {description}"
+            })
+            return description
+        except Exception as e:
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            if ("insufficient_quota" in error_str or
+                (error_type == "RateLimitError" and "quota" in error_str) or
+                ("429" in error_str and "quota" in error_str)):
+                print("\n" + "="*60)
+                print("Error: OpenAI API quota exceeded.")
+                print("="*60)
+                print("Your OpenAI account has run out of credits.")
+                print("Please check your account billing and add credits:")
+                print("  https://platform.openai.com/account/billing")
+                print("="*60)
+                import sys
+                sys.exit(1)
+            raise
+
+    def _get_player_context(self, has_shield: bool = False, has_sword: bool = False, has_armor: bool = False) -> str:
+        """Generate context string about the player's current equipment state."""
+        equipment = []
+        if not has_shield and not has_sword and not has_armor:
+            return "IMPORTANT: The player has NO armor, NO shield, and NO sword. All their gear was stolen by goblin bandits. They are wearing only basic clothing/robes, not armor."
+        if has_shield:
+            equipment.append("shield")
+        if has_sword:
+            equipment.append("sword")
+        if has_armor:
+            equipment.append("armor")
+        return f"The player currently has: {', '.join(equipment)}. All other gear was stolen by goblin bandits."
+
+    def describe_pray(self, has_shield: bool = False, has_sword: bool = False, has_armor: bool = False) -> str:
+        """Generate narrative description of the player praying for restoration.
+        
+        Args:
+            has_shield: Whether the player has a shield
+            has_sword: Whether the player has a sword
+            has_armor: Whether the player has any armor pieces
+        """
+        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        prompt = f"""A holy knight/paladin, injured and weary, kneels to pray for restoration.
+
+{player_context}
+
+Write a vivid 2-3 sentence description of the prayer. Describe how the knight kneels, calls upon their god, and feels the divine light heal their wounds. Be atmospheric and immersive, like a dungeon master narrating a moment of faith.
+
+IMPORTANT: Do NOT mention armor, shield, or sword unless the player actually has them. If they don't have armor, describe them in simple clothing/robes, not armor.
+
+Example style (when no armor):
+"You drop to one knee on the cold stone, pressing your hands together in prayer. The words of devotion flow from your lips as you call upon the Light. Warm, golden radiance envelops you, and you feel your wounds knitting closed, your strength returning. The divine power courses through you, and you rise, ready to continue your quest."
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=100,
+                temperature=0.8,
+            )
+            description = response.choices[0].message.content.strip()
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"Prayer for restoration: {description}"
+            })
+            return description
+        except Exception as e:
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            if ("insufficient_quota" in error_str or
+                (error_type == "RateLimitError" and "quota" in error_str) or
+                ("429" in error_str and "quota" in error_str)):
+                print("\n" + "="*60)
+                print("Error: OpenAI API quota exceeded.")
+                print("="*60)
+                print("Your OpenAI account has run out of credits.")
+                print("Please check your account billing and add credits:")
+                print("  https://platform.openai.com/account/billing")
+                print("="*60)
+                import sys
+                sys.exit(1)
+            raise
+
+    def describe_potion_use(self, had_potion: bool) -> str:
+        """Generate narrative description of using a health potion."""
+        if not had_potion:
+            return "You reach for a potion, but your inventory is empty. No healing awaits you."
+        
+        prompt = """A holy knight/paladin drinks a health potion during combat or rest.
+
+Write a vivid 2-3 sentence description of drinking the potion. Describe the act of drinking, the taste, and the healing effect. Be atmospheric and immersive, like a dungeon master narrating item use.
+
+Example style:
+"You uncork the vial and drink the shimmering liquid in one swift motion. The potion tastes of honey and light, spreading warmth through your body. Your wounds close, your breathing steadies, and strength floods back into your limbs."
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=100,
+                temperature=0.8,
+            )
+            description = response.choices[0].message.content.strip()
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"Potion use: {description}"
+            })
+            return description
+        except Exception as e:
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            if ("insufficient_quota" in error_str or
+                (error_type == "RateLimitError" and "quota" in error_str) or
+                ("429" in error_str and "quota" in error_str)):
+                print("\n" + "="*60)
+                print("Error: OpenAI API quota exceeded.")
+                print("="*60)
+                print("Your OpenAI account has run out of credits.")
+                print("Please check your account billing and add credits:")
+                print("  https://platform.openai.com/account/billing")
+                print("="*60)
+                import sys
+                sys.exit(1)
+            raise
+
+    def describe_flee(self, success: bool, monster_name: str) -> str:
+        """Generate narrative description of attempting to flee."""
+        prompt = f"""A holy knight/paladin attempts to flee from combat with: {monster_name}
+
+The attempt was {'successful' if success else 'unsuccessful'}.
+
+Write a vivid 2-3 sentence description of the attempt to flee. Be atmospheric and immersive, like a dungeon master narrating escape.
+
+{'Example for success: "You break away from the creature, turning and sprinting down the corridor. The monster\'s snarls fade behind you as you put distance between yourself and danger."' if success else 'Example for failure: "You try to disengage, but the creature is too quick. Its claws rake across your back as you turn, forcing you back into the fight."'}
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=100,
+                temperature=0.8,
+            )
+            description = response.choices[0].message.content.strip()
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": f"Flee attempt ({'success' if success else 'failed'}): {description}"
+            })
+            return description
+        except Exception as e:
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            if ("insufficient_quota" in error_str or
+                (error_type == "RateLimitError" and "quota" in error_str) or
+                ("429" in error_str and "quota" in error_str)):
+                print("\n" + "="*60)
+                print("Error: OpenAI API quota exceeded.")
+                print("="*60)
+                print("Your OpenAI account has run out of credits.")
+                print("Please check your account billing and add credits:")
+                print("  https://platform.openai.com/account/billing")
+                print("="*60)
+                import sys
+                sys.exit(1)
+            raise
 
     def describe_encounter(
         self,
@@ -123,7 +511,7 @@ Write only the description, no quotes or labels:"""
         # Build messages with conversation history for context
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
-        
+
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -143,7 +531,7 @@ Write only the description, no quotes or labels:"""
             error_str = str(e).lower()
             error_type = type(e).__name__
             # Check for insufficient quota errors
-            if ("insufficient_quota" in error_str or 
+            if ("insufficient_quota" in error_str or
                 (error_type == "RateLimitError" and "quota" in error_str) or
                 ("429" in error_str and "quota" in error_str)):
                 print("\n" + "="*60)
@@ -195,7 +583,7 @@ Write only the sentence, no quotes or extra text:"""
         # Build messages with conversation history for context
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
-        
+
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -217,7 +605,7 @@ Write only the sentence, no quotes or extra text:"""
             error_str = str(e).lower()
             error_type = type(e).__name__
             # Check for insufficient quota errors
-            if ("insufficient_quota" in error_str or 
+            if ("insufficient_quota" in error_str or
                 (error_type == "RateLimitError" and "quota" in error_str) or
                 ("429" in error_str and "quota" in error_str)):
                 print("\n" + "="*60)
