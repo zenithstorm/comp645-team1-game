@@ -45,8 +45,11 @@ class DropResult(Enum):
     BOOTS = auto()
 
     @classmethod
-    def armor_pieces(cls) -> List["DropResult"]:
+    def unique_gear(cls) -> List["DropResult"]:
+        """Return all unique gear items (shield, sword, and armor pieces)."""
         return [
+            cls.SHIELD,
+            cls.SWORD,
             cls.HELM,
             cls.PAULDRONS,
             cls.CUIRASS,
@@ -54,7 +57,6 @@ class DropResult(Enum):
             cls.LEG_GUARDS,
             cls.BOOTS,
         ]
-
 
 @dataclass
 class Actor:
@@ -120,7 +122,8 @@ class Player(Actor):
         return self.base_defense + len(self.owned_armor) * config.ARMOR_DEFENSE_BONUS_PER_PIECE
 
     def add_armor_piece(self, armor_piece: DropResult) -> None:
-        if armor_piece in DropResult.armor_pieces() and armor_piece not in self.owned_armor:
+        """Add an armor piece to the player's owned armor set."""
+        if armor_piece not in self.owned_armor:
             self.owned_armor.add(armor_piece)
 
     def use_potion(self) -> bool:

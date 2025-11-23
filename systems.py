@@ -141,9 +141,8 @@ class DropCalculator:
 
     def __init__(self, random_provider: RandomProvider) -> None:
         self.random_provider = random_provider
-        self._remaining_armor: List[DropResult] = list(DropResult.armor_pieces())
-        self._shield_dropped: bool = False
-        self._sword_dropped: bool = False
+        # Track all unique gear that can still drop (shield, sword, and armor pieces)
+        self._remaining_gear: List[DropResult] = list(DropResult.unique_gear())
 
     def get_drop_for_monster(self, defeated_count: int, player: Player) -> DropResult:
         """Get the drop for a monster encounter (guaranteed progression items or random drop).
@@ -160,23 +159,29 @@ class DropCalculator:
         """
         # Check for guaranteed progression items first
         # Shield guaranteed on 1st monster (defeated_count will be 1 after this fight)
-        if defeated_count == 0 and not player.has_shield and not self._shield_dropped:
+        if defeated_count == 0 and not player.has_shield and DropResult.SHIELD in self._remaining_gear:
+            self._remaining_gear.remove(DropResult.SHIELD)
             return DropResult.SHIELD
         # Sword guaranteed on 3rd monster (defeated_count will be 3 after this fight)
-        if defeated_count == 2 and not player.has_sword and not self._sword_dropped:
+        if defeated_count == 2 and not player.has_sword and DropResult.SWORD in self._remaining_gear:
+            self._remaining_gear.remove(DropResult.SWORD)
             return DropResult.SWORD
-        # Otherwise, roll for a random drop
+        # Otherwise, roll for a random drop (but exclude shield/sword if already dropped)
         return self.roll_item_drop()
 
     def roll_item_drop(self) -> DropResult:
+        """Roll for a random item drop, excluding unique items that have already been dropped."""
         # Build base weights
         weight_no_item = config.DROP_WEIGHTS["NO_ITEM"]
         weight_health_potion = config.DROP_WEIGHTS["HEALTH_POTION"]
         weight_escape_scroll = config.DROP_WEIGHTS["ESCAPE_SCROLL"]
-        weight_armor = config.DROP_WEIGHTS["ARMOR"] if self._remaining_armor else 0.0
+        # Check if any gear (armor pieces) remain
+        # Filter _remaining_gear to get only armor pieces (exclude shield and sword)
+        remaining_armor = [item for item in self._remaining_gear if item not in (DropResult.SHIELD, DropResult.SWORD)]
+        weight_armor = config.DROP_WEIGHTS["ARMOR"] if remaining_armor else 0.0
 
         # If no armor remains, redistribute armor weight to 'no item'
-        if not self._remaining_armor:
+        if not remaining_armor:
             weight_no_item += config.DROP_WEIGHTS["ARMOR"]
 
         # Armor selection is two-step: pick 'armor' bucket, then pick which piece
@@ -194,9 +199,9 @@ class DropCalculator:
             return DropResult.HEALTH_POTION
         if chosen_bucket == "ESCAPE_SCROLL":
             return DropResult.ESCAPE_SCROLL
-        if chosen_bucket == "ARMOR" and self._remaining_armor:
-            armor_piece = self.random_provider.choice(self._remaining_armor)
-            self._remaining_armor.remove(armor_piece)
+        if chosen_bucket == "ARMOR" and remaining_armor:
+            armor_piece = self.random_provider.choice(remaining_armor)
+            self._remaining_gear.remove(armor_piece)
             return armor_piece
         return DropResult.NO_ITEM
 
@@ -570,7 +575,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
 
         Args:
             monster: The defeated monster
-            final_action: The action that killed the monster (if known)
+            final_action: The action that killed the monster
             is_weakness: Whether the final action was a weakness hit
         """
         items_acquired = self._collect_items_acquired(monster)
@@ -604,7 +609,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         self._apply_loot(drop)
 
     def _apply_loot_silent(self, drop: DropResult) -> None:
-        """Apply loot to player without showing a message (message already shown)."""
+        """Apply loot to player"""
         if drop == DropResult.NO_ITEM:
             pass  # Nothing to apply
         elif drop == DropResult.HEALTH_POTION:
@@ -613,16 +618,11 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             self.player.inventory.add_escape_scroll()
         elif drop == DropResult.SHIELD:
             self.player.has_shield = True
-            self.drop_calculator._shield_dropped = True
-            # Show unlock message separately
             ui.show(self.storyteller, "loot: Shield Bash unlocked")
         elif drop == DropResult.SWORD:
             self.player.has_sword = True
-            self.drop_calculator._sword_dropped = True
-            # Show unlock message separately
             ui.show(self.storyteller, "loot: Sword Slash unlocked")
         else:
-            # Armor piece
             self.player.add_armor_piece(drop)
 
     def _apply_loot(self, drop: DropResult) -> None:
@@ -637,14 +637,11 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             self.player.inventory.add_escape_scroll()
         elif drop == DropResult.SHIELD:
             self.player.has_shield = True
-            self.drop_calculator._shield_dropped = True
             ui.show(self.storyteller, "loot: Shield Bash unlocked")
         elif drop == DropResult.SWORD:
             self.player.has_sword = True
-            self.drop_calculator._sword_dropped = True
             ui.show(self.storyteller, "loot: Sword Slash unlocked")
         else:
-            # Armor piece
             self.player.add_armor_piece(drop)
 
     def _status_text(self) -> str:
