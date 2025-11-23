@@ -270,7 +270,6 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         menu: List[Tuple[str, str]] = [("Proceed onward", "proceed")]
         if self.player.health < self.player.max_health:
             menu.append(("Pray for restoration (full heal)", "pray"))
-        menu.append(("Use a health potion", "potion"))
         titles = [title for title, _ in menu]
         debug_print("About to call prompt_choice")
         idx = ui.prompt_choice(self.storyteller, "Choose your course:", titles)
@@ -511,7 +510,9 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
 
     def _combat_options(self) -> List[Action]:
         options: List[Action] = list(self.player.abilities().keys())
-        options.append(Action.USE_POTION)
+        # Only show potion option if player is injured AND has potions
+        if self.player.health < self.player.max_health and self.player.inventory.num_potions > 0:
+            options.append(Action.USE_POTION)
         options.append(Action.FLEE)
         return options
 
