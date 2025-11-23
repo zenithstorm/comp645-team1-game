@@ -354,12 +354,8 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         debug_print(f"Monster generated: {self.current_monster.name}")
         # Store the guaranteed drop on the monster
         self.current_monster.guaranteed_drop = guaranteed_drop
-        # Collect all items that will be present in the encounter
+        # Only show the guaranteed drop in the encounter (unlocks are revealed after victory)
         items: List[Union[DropResult, str]] = []
-        if "shield" in pending_unlocks:
-            items.append("a shield")
-        if "sword" in pending_unlocks:
-            items.append("a sword")
         if guaranteed_drop != DropResult.NO_ITEM:
             items.append(guaranteed_drop)
         # Generate full narrative encounter description from LLM
