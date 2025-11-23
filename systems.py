@@ -325,72 +325,39 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         debug_print(f"Monster generated: {self.current_monster.name}")
         # Store the guaranteed drop on the monster
         self.current_monster.guaranteed_drop = guaranteed_drop
-        # Generate description with item context
-        description = self.current_monster.description
-        # Add unlock items to description via StoryTeller (these will be acquired after defeat)
+        # Collect all items that will be present in the encounter
+        items: List[Union[DropResult, str]] = []
         if "shield" in pending_unlocks:
-            debug_print("Generating shield description...")
-            if not DEBUG:
-                print("Generating description...", end="", flush=True)
-            try:
-                shield_desc = self.storyteller.describe_item_in_context(
-                    "a shield", self.current_monster.name, self.current_monster.description
-                )
-                if not DEBUG:
-                    print("\r" + " " * 30 + "\r", end="", flush=True)  # Clear the loading message
-                debug_print(f"Shield description generated: {shield_desc[:50]}...")
-                description += shield_desc
-            except Exception as e:
-                if not DEBUG:
-                    print()  # New line after loading message
-                print(f"Error generating description: {e}", flush=True)
-                import traceback
-                traceback.print_exc()
-                description += " You notice a shield nearby."
+            items.append("a shield")
         if "sword" in pending_unlocks:
-            debug_print("Generating sword description...")
-            if not DEBUG:
-                print("Generating description...", end="", flush=True)
-            try:
-                sword_desc = self.storyteller.describe_item_in_context(
-                    "a sword", self.current_monster.name, self.current_monster.description
-                )
-                if not DEBUG:
-                    print("\r" + " " * 30 + "\r", end="", flush=True)  # Clear the loading message
-                debug_print(f"Sword description generated: {sword_desc[:50]}...")
-                description += sword_desc
-            except Exception as e:
-                if not DEBUG:
-                    print()  # New line after loading message
-                print(f"Error generating description: {e}", flush=True)
-                import traceback
-                traceback.print_exc()
-                description += " You notice a sword nearby."
-        # Add regular drop items via StoryTeller
+            items.append("a sword")
         if guaranteed_drop != DropResult.NO_ITEM:
-            debug_print(f"Generating drop description for: {guaranteed_drop}")
+            items.append(guaranteed_drop)
+        # Generate full narrative encounter description from LLM
+        debug_print("Generating full encounter description...")
+        if not DEBUG:
+            print("Story Teller is thinking...", end="", flush=True)
+        try:
+            description = self.storyteller.describe_encounter(
+                self.current_monster.name,
+                self.current_monster.description,
+                items
+            )
             if not DEBUG:
-                print("Generating description...", end="", flush=True)
-            try:
-                item_description = self.storyteller.describe_item_in_context(
-                    guaranteed_drop, self.current_monster.name, self.current_monster.description
-                )
-                if not DEBUG:
-                    print("\r" + " " * 30 + "\r", end="", flush=True)  # Clear the loading message
-                debug_print(f"Drop description generated: {item_description[:50]}...")
-                description += item_description
-            except Exception as e:
-                if not DEBUG:
-                    print()  # New line after loading message
-                print(f"Error generating description: {e}", flush=True)
-                import traceback
-                traceback.print_exc()
-                item_name = guaranteed_drop.name.replace("_", " ").lower()
-                description += f" You notice {item_name} nearby."
+                print("\r" + " " * 30 + "\r", end="", flush=True)  # Clear the loading message
+            debug_print(f"Encounter description generated: {description[:50]}...")
+        except Exception as e:
+            if not DEBUG:
+                print()  # New line after loading message
+            print(f"Error generating description: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            # Fallback to simple description
+            description = f"You encounter {self.current_monster.name}. {self.current_monster.description}"
         debug_print("Showing encounter message")
         ui.show(
             self.storyteller,
-            f"encounter: Enemy spotted: {self.current_monster.name}. {description}",
+            f"encounter: {description}",
         )
         debug_print("Encounter message shown, returning")
 
