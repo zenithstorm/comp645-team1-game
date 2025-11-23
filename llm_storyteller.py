@@ -47,6 +47,65 @@ class LLMStoryTeller:
             }
         ]
 
+    def _check_quota_error(self, e: Exception) -> None:
+        """Check if an exception is a quota/rate limit error and exit if so.
+
+        Args:
+            e: The exception to check
+        """
+        error_str = str(e).lower()
+        error_type = type(e).__name__
+        if ("insufficient_quota" in error_str or
+            (error_type == "RateLimitError" and "quota" in error_str) or
+            ("429" in error_str and "quota" in error_str)):
+            print("\n" + "="*60)
+            print("Error: OpenAI API quota exceeded.")
+            print("="*60)
+            print("Your OpenAI account has run out of credits.")
+            print("Please check your account billing and add credits:")
+            print("  https://platform.openai.com/account/billing")
+            print("="*60)
+            import sys
+            sys.exit(1)
+
+    def _call_llm(self, messages: List[dict], max_tokens: int, temperature: float = 0.8) -> str:
+        """Make an LLM API call and return the response content.
+
+        Args:
+            messages: List of message dicts for the API call
+            max_tokens: Maximum tokens for the response
+            temperature: Temperature for the API call (default 0.8)
+
+        Returns:
+            The response content as a string
+
+        Raises:
+            Exception: Re-raises any non-quota errors
+        """
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            # Check if response was truncated due to token limit
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "length":
+                print(f"[WARNING] Response truncated due to token limit (finish_reason: {finish_reason})", flush=True)
+            content = response.choices[0].message.content
+            if content is None:
+                raise ValueError("LLM returned None content")
+            return content.strip()
+        except Exception as e:
+            # Print error for debugging
+            print(f"\n[ERROR] LLM API call failed: {type(e).__name__}: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            self._check_quota_error(e)
+            # Re-raise other errors
+            raise
+
     def add_game_event(self, event_text: str) -> None:
         """Add a game event to the conversation history so the LLM remembers it.
 
@@ -116,36 +175,12 @@ Write only the description, no quotes or labels:"""
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
         
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=100,
-                temperature=0.8,
-            )
-            description = response.choices[0].message.content.strip()
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Player action ({action}): {description}"
-            })
-            return description
-        except Exception as e:
-            # Handle quota errors
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            if ("insufficient_quota" in error_str or
-                (error_type == "RateLimitError" and "quota" in error_str) or
-                ("429" in error_str and "quota" in error_str)):
-                print("\n" + "="*60)
-                print("Error: OpenAI API quota exceeded.")
-                print("="*60)
-                print("Your OpenAI account has run out of credits.")
-                print("Please check your account billing and add credits:")
-                print("  https://platform.openai.com/account/billing")
-                print("="*60)
-                import sys
-                sys.exit(1)
-            raise
+        description = self._call_llm(messages, max_tokens=250)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Player action ({action}): {description}"
+        })
+        return description
 
     def describe_monster_attack(
         self,
@@ -189,35 +224,12 @@ Write only the description, no quotes or labels:"""
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=100,
-                temperature=0.8,
-            )
-            description = response.choices[0].message.content.strip()
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Monster attack: {description}"
-            })
-            return description
-        except Exception as e:
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            if ("insufficient_quota" in error_str or
-                (error_type == "RateLimitError" and "quota" in error_str) or
-                ("429" in error_str and "quota" in error_str)):
-                print("\n" + "="*60)
-                print("Error: OpenAI API quota exceeded.")
-                print("="*60)
-                print("Your OpenAI account has run out of credits.")
-                print("Please check your account billing and add credits:")
-                print("  https://platform.openai.com/account/billing")
-                print("="*60)
-                import sys
-                sys.exit(1)
-            raise
+        description = self._call_llm(messages, max_tokens=250)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Monster attack: {description}"
+        })
+        return description
 
     def describe_victory(
         self,
@@ -265,35 +277,12 @@ Write only the description, no quotes or labels:"""
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=120,
-                temperature=0.8,
-            )
-            description = response.choices[0].message.content.strip()
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Victory over {monster_name}: {description}"
-            })
-            return description
-        except Exception as e:
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            if ("insufficient_quota" in error_str or
-                (error_type == "RateLimitError" and "quota" in error_str) or
-                ("429" in error_str and "quota" in error_str)):
-                print("\n" + "="*60)
-                print("Error: OpenAI API quota exceeded.")
-                print("="*60)
-                print("Your OpenAI account has run out of credits.")
-                print("Please check your account billing and add credits:")
-                print("  https://platform.openai.com/account/billing")
-                print("="*60)
-                import sys
-                sys.exit(1)
-            raise
+        description = self._call_llm(messages, max_tokens=300)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Victory over {monster_name}: {description}"
+        })
+        return description
 
     def _get_player_context(self, has_shield: bool = False, has_sword: bool = False, has_armor: bool = False) -> str:
         """Generate context string about the player's current equipment state."""
@@ -333,35 +322,12 @@ Write only the description, no quotes or labels:"""
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=100,
-                temperature=0.8,
-            )
-            description = response.choices[0].message.content.strip()
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Prayer for restoration: {description}"
-            })
-            return description
-        except Exception as e:
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            if ("insufficient_quota" in error_str or
-                (error_type == "RateLimitError" and "quota" in error_str) or
-                ("429" in error_str and "quota" in error_str)):
-                print("\n" + "="*60)
-                print("Error: OpenAI API quota exceeded.")
-                print("="*60)
-                print("Your OpenAI account has run out of credits.")
-                print("Please check your account billing and add credits:")
-                print("  https://platform.openai.com/account/billing")
-                print("="*60)
-                import sys
-                sys.exit(1)
-            raise
+        description = self._call_llm(messages, max_tokens=250)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Prayer for restoration: {description}"
+        })
+        return description
 
     def describe_potion_use(self, had_potion: bool) -> str:
         """Generate narrative description of using a health potion."""
@@ -380,35 +346,12 @@ Write only the description, no quotes or labels:"""
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=100,
-                temperature=0.8,
-            )
-            description = response.choices[0].message.content.strip()
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Potion use: {description}"
-            })
-            return description
-        except Exception as e:
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            if ("insufficient_quota" in error_str or
-                (error_type == "RateLimitError" and "quota" in error_str) or
-                ("429" in error_str and "quota" in error_str)):
-                print("\n" + "="*60)
-                print("Error: OpenAI API quota exceeded.")
-                print("="*60)
-                print("Your OpenAI account has run out of credits.")
-                print("Please check your account billing and add credits:")
-                print("  https://platform.openai.com/account/billing")
-                print("="*60)
-                import sys
-                sys.exit(1)
-            raise
+        description = self._call_llm(messages, max_tokens=250)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Potion use: {description}"
+        })
+        return description
 
     def describe_flee(self, success: bool, monster_name: str) -> str:
         """Generate narrative description of attempting to flee."""
@@ -425,35 +368,12 @@ Write only the description, no quotes or labels:"""
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=100,
-                temperature=0.8,
-            )
-            description = response.choices[0].message.content.strip()
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Flee attempt ({'success' if success else 'failed'}): {description}"
-            })
-            return description
-        except Exception as e:
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            if ("insufficient_quota" in error_str or
-                (error_type == "RateLimitError" and "quota" in error_str) or
-                ("429" in error_str and "quota" in error_str)):
-                print("\n" + "="*60)
-                print("Error: OpenAI API quota exceeded.")
-                print("="*60)
-                print("Your OpenAI account has run out of credits.")
-                print("Please check your account billing and add credits:")
-                print("  https://platform.openai.com/account/billing")
-                print("="*60)
-                import sys
-                sys.exit(1)
-            raise
+        description = self._call_llm(messages, max_tokens=250)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Flee attempt ({'success' if success else 'failed'}): {description}"
+        })
+        return description
 
     def describe_encounter(
         self,
@@ -512,39 +432,13 @@ Write only the description, no quotes or labels:"""
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=150,
-                temperature=0.8,
-            )
-            description = response.choices[0].message.content.strip()
-            # Add to conversation history
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Encounter with {monster_name}: {description}"
-            })
-            return description
-        except Exception as e:
-            # Check if it's a quota/rate limit error
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            # Check for insufficient quota errors
-            if ("insufficient_quota" in error_str or
-                (error_type == "RateLimitError" and "quota" in error_str) or
-                ("429" in error_str and "quota" in error_str)):
-                print("\n" + "="*60)
-                print("Error: OpenAI API quota exceeded.")
-                print("="*60)
-                print("Your OpenAI account has run out of credits.")
-                print("Please check your account billing and add credits:")
-                print("  https://platform.openai.com/account/billing")
-                print("="*60)
-                import sys
-                sys.exit(1)
-            # Re-raise other errors (they'll be caught by the try/except in systems.py)
-            raise
+        description = self._call_llm(messages, max_tokens=300)
+        # Add to conversation history
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Encounter with {monster_name}: {description}"
+        })
+        return description
 
     def describe_item_in_context(
         self, 
@@ -584,39 +478,12 @@ Write only the sentence, no quotes or extra text:"""
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=60,
-                temperature=0.8,
-            )
-            # Add the response to conversation history
-            description = response.choices[0].message.content.strip()
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Item description for {item_name}: {description}"
-            })
-            description = response.choices[0].message.content.strip()
-            # Ensure it starts with a space if not empty
-            return f" {description}" if description else ""
-        except Exception as e:
-            # Check if it's a quota/rate limit error
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            # Check for insufficient quota errors
-            if ("insufficient_quota" in error_str or
-                (error_type == "RateLimitError" and "quota" in error_str) or
-                ("429" in error_str and "quota" in error_str)):
-                print("\n" + "="*60)
-                print("Error: OpenAI API quota exceeded.")
-                print("="*60)
-                print("Your OpenAI account has run out of credits.")
-                print("Please check your account billing and add credits:")
-                print("  https://platform.openai.com/account/billing")
-                print("="*60)
-                import sys
-                sys.exit(1)
-            # Re-raise other errors (they'll be caught by the try/except in systems.py)
-            raise
+        description = self._call_llm(messages, max_tokens=150)
+        # Add the response to conversation history
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Item description for {item_name}: {description}"
+        })
+        # Ensure it starts with a space if not empty
+        return f" {description}" if description else ""
 
