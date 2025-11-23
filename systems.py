@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from typing import List, Optional, Tuple, Protocol, Any
+from typing import List, Optional, Tuple, Protocol, Any, Union
 
 from . import config, ui
 from .models import (
@@ -25,10 +25,44 @@ class StoryTeller:
         suffix = " ⟣"
         return f"{prefix}{context.strip()}{suffix}"
 
+    def describe_item_in_context(self, item: Union[DropResult, str], monster_name: str, monster_type: str, monster_description: str) -> str:
+        """Generate a creative description of how the item relates to the monster.
+
+        Args:
+            item: Either a DropResult enum (for regular drops) or a string (for unlock items like "a shield")
+            monster_name: Name of the monster
+            monster_type: Type of the monster
+            monster_description: Base description of the monster
+
+        Returns:
+            A creative description of how the item appears in relation to the monster.
+            Empty string if item is NO_ITEM or invalid.
+        """
+        # Stub implementation - in production, this would call an LLM with context
+        # The LLM will receive: monster_name, monster_type, monster_description, and item
+        # and generate creative prose about how the item appears in relation to the monster
+        # e.g., A goblin may brandish the player's holy shield at the player
+        # e.g., "Your sword rests on the cold stone below, untouched—the wraith clearly slew the bandit who carried it without caring for earthly spoils"
+
+        # Handle DropResult enum
+        if isinstance(item, DropResult):
+            if item == DropResult.NO_ITEM:
+                return ""
+            item_name = item.name.replace("_", " ").lower()
+        # Handle string (for unlock items)
+        elif isinstance(item, str):
+            item_name = item
+        else:
+            return ""
+
+        # Simple placeholder - LLM will generate more creative descriptions based on monster type
+        return f" You notice {item_name} nearby."
+
 class StoryTellerProtocol(Protocol):
     # OO rationale: Behavioral contract for narrative providers. Allows the
     # game loop to depend on an interface instead of a concrete type.
     def get_current_description(self, context: str) -> str: ...
+    def describe_item_in_context(self, item: Union[DropResult, str], monster_name: str, monster_type: str, monster_description: str) -> str: ...
 
 class RandomProvider(Protocol):
     # OO rationale: Small RNG abstraction to make probabilistic systems
@@ -198,6 +232,34 @@ class DropCalculator:
         return DropResult.NO_ITEM
 
 
+class Progression:
+    # OO rationale: Encapsulates scripted unlock logic based on game progress.
+    # Separates progression rules from game orchestration, making unlock
+    # conditions easy to modify and test independently.
+    """Handles scripted unlocks based on defeated monsters count."""
+
+    def get_pending_unlocks(self, defeated_count: int, player: Player) -> List[str]:
+        """Predict what will be unlocked when the next monster is defeated. Returns list of item names."""
+        pending: List[str] = []
+        next_count = defeated_count + 1
+        if next_count == 1 and not player.has_shield:
+            pending.append("shield")
+        if next_count == 3 and not player.has_sword:
+            pending.append("sword")
+        return pending
+
+    def check_and_apply_unlocks(self, defeated_count: int, player: Player) -> List[str]:
+        """Check unlock conditions and apply them to the player. Returns list of unlock messages."""
+        messages: List[str] = []
+        if defeated_count == 1 and not player.has_shield:
+            player.has_shield = True
+            messages.append("loot: Shield acquired. (Shield Bash unlocked)")
+        if defeated_count == 3 and not player.has_sword:
+            player.has_sword = True
+            messages.append("loot: Sword acquired. (Sword Slash unlocked)")
+        return messages
+
+
 class GameSystem:
     # OO rationale: Orchestrator and state machine for the game flow. It
     # coordinates services (storyteller, RNG, generators) and owns session
@@ -216,6 +278,7 @@ class GameSystem:
         self.current_monster: Optional[Monster] = None
         self.drop_calculator = DropCalculator(self.random_provider)
         self.monster_generator = MonsterGenerator(self.random_provider)
+        self.progression = Progression()
         self.defeated_monsters_count: int = 0
         self.game_won: bool = False
 
@@ -265,15 +328,40 @@ class GameSystem:
             self._apply_loot(drop, source="room")
             return
         # Monster room
+        # Roll the drop now so we can describe it in the encounter
+        guaranteed_drop = self.drop_calculator.roll_item_drop()
+        # Check what unlocks are pending before generating the monster
+        pending_unlocks = self.progression.get_pending_unlocks(self.defeated_monsters_count, self.player)
         # Small chance to encounter the boss after some progress
         if self.defeated_monsters_count >= config.BOSS_SPAWN_THRESHOLD and self.random_provider.random() < config.BOSS_SPAWN_CHANCE:
             self.current_monster = self.monster_generator.generate_boss()
         else:
             self.current_monster = self.monster_generator.generate_monster()
+        # Store the guaranteed drop on the monster
+        self.current_monster.guaranteed_drop = guaranteed_drop
+        # Generate description with item context
+        description = self.current_monster.description
+        # Add unlock items to description via StoryTeller (these will be acquired after defeat)
+        if "shield" in pending_unlocks:
+            shield_desc = self.storyteller.describe_item_in_context(
+                "a shield", self.current_monster.name, self.current_monster.type, self.current_monster.description
+            )
+            description += shield_desc
+        if "sword" in pending_unlocks:
+            sword_desc = self.storyteller.describe_item_in_context(
+                "a sword", self.current_monster.name, self.current_monster.type, self.current_monster.description
+            )
+            description += sword_desc
+        # Add regular drop items via StoryTeller
+        if guaranteed_drop != DropResult.NO_ITEM:
+            item_description = self.storyteller.describe_item_in_context(
+                guaranteed_drop, self.current_monster.name, self.current_monster.type, self.current_monster.description
+            )
+            description += item_description
         ui.show(
             self.storyteller,
             f"encounter: Enemy spotted: {self.current_monster.name} ({self.current_monster.type}). "
-            f"{self.current_monster.description}",
+            f"{description}",
         )
 
     def _weighted_room_choice(self) -> str:
@@ -360,15 +448,16 @@ class GameSystem:
             self.game_won = True
             return
         # Scripted unlocks
-        if self.defeated_monsters_count == 1 and not self.player.has_shield:
-            self.player.has_shield = True
-            ui.show(self.storyteller, "loot: Shield acquired. (Shield Bash unlocked)")
-        if self.defeated_monsters_count == 3 and not self.player.has_sword:
-            self.player.has_sword = True
-            ui.show(self.storyteller, "loot: Sword acquired. (Sword Slash unlocked)")
-        # Regular drop
-        drop = self.drop_calculator.roll_item_drop()
-        self._apply_loot(drop, source="battle")
+        unlock_messages = self.progression.check_and_apply_unlocks(self.defeated_monsters_count, self.player)
+        for message in unlock_messages:
+            ui.show(self.storyteller, message)
+        # Use the guaranteed drop that was determined when the monster was encountered
+        if monster.guaranteed_drop is not None:
+            self._apply_loot(monster.guaranteed_drop, source="battle")
+        else:
+            # Fallback: roll if somehow drop wasn't set (shouldn't happen)
+            drop = self.drop_calculator.roll_item_drop()
+            self._apply_loot(drop, source="battle")
 
     def _apply_loot(self, drop: DropResult, source: str) -> None:
         if drop == DropResult.NO_ITEM:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import List, Set, Callable, Dict
+from typing import List, Set, Callable, Dict, Optional
 
 from . import config
 
@@ -180,6 +180,7 @@ class Monster(Actor):
     weaknesses: List[Weakness] = field(default_factory=list)
     description: str = ""
     is_boss: bool = False
+    guaranteed_drop: Optional["DropResult"] = None
 
     def attack(self) -> int:
         # Slight randomness to monster damage
