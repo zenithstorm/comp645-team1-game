@@ -372,12 +372,48 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         debug_print(f"Room type: {room}")
         if room == "empty":
             debug_print("Empty room")
-            ui.show(self.storyteller, "room: A quiet space—no immediate threats or finds.") # TODO: make this a story teller narrative instead of a hardcoded string
+            if not DEBUG:
+                print("Story Teller is thinking...", end="", flush=True)
+            try:
+                description = self.storyteller.describe_empty_room()
+                if not DEBUG:
+                    print("\r" + " " * 30 + "\r", end="", flush=True)
+                ui.show(self.storyteller, f"room: {description}")
+            except Exception as e:
+                if not DEBUG:
+                    print()
+                print(f"Error generating description: {e}", flush=True)
+                ui.show(self.storyteller, "room: A quiet space—no immediate threats or finds.")
             return
         if room == "loot":
             debug_print("Loot room")
             drop = self.drop_calculator.roll_item_drop()
-            self._apply_loot(drop)
+            # Generate narrative description of finding the loot
+            has_shield, has_sword, has_armor = self._get_player_equipment_state()
+            if not DEBUG:
+                print("Story Teller is thinking...", end="", flush=True)
+            try:
+                description = self.storyteller.describe_loot_find(
+                    drop,
+                    has_shield=has_shield,
+                    has_sword=has_sword,
+                    has_armor=has_armor
+                )
+                if not DEBUG:
+                    print("\r" + " " * 30 + "\r", end="", flush=True)
+                ui.show(self.storyteller, f"loot: {description}")
+            except Exception as e:
+                if not DEBUG:
+                    print()
+                print(f"Error generating description: {e}", flush=True)
+                # Fallback to simple message
+                if drop == DropResult.NO_ITEM:
+                    ui.show(self.storyteller, "loot: No notable items found.")
+                else:
+                    item_name = drop.name.replace("_", " ").title() if drop != DropResult.SHIELD and drop != DropResult.SWORD else drop.name.replace("_", " ").title()
+                    ui.show(self.storyteller, f"loot: Found {item_name}.")
+            # Apply the loot after showing the description
+            self._apply_loot_silent(drop)
             return
         # Monster room
         debug_print("Monster room - generating monster")
@@ -567,29 +603,49 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         drop = monster.item_drop if monster.item_drop is not None else self.drop_calculator.roll_item_drop()
         self._apply_loot(drop)
 
-    def _apply_loot(self, drop: DropResult) -> None:
-        """Apply loot to player and show message."""
+    def _apply_loot_silent(self, drop: DropResult) -> None:
+        """Apply loot to player without showing a message (message already shown)."""
         if drop == DropResult.NO_ITEM:
-            ui.show(self.storyteller, "loot: No notable items found.")
+            pass  # Nothing to apply
         elif drop == DropResult.HEALTH_POTION:
             self.player.inventory.add_potion()
-            ui.show(self.storyteller, "loot: Gained 1 Health Potion.")
         elif drop == DropResult.ESCAPE_SCROLL:
             self.player.inventory.add_escape_scroll()
-            ui.show(self.storyteller, "loot: Gained 1 Escape Scroll.")
         elif drop == DropResult.SHIELD:
             self.player.has_shield = True
             self.drop_calculator._shield_dropped = True
-            ui.show(self.storyteller, "loot: Shield acquired. (Shield Bash unlocked)")
+            # Show unlock message separately
+            ui.show(self.storyteller, "loot: Shield Bash unlocked")
         elif drop == DropResult.SWORD:
             self.player.has_sword = True
             self.drop_calculator._sword_dropped = True
-            ui.show(self.storyteller, "loot: Sword acquired. (Sword Slash unlocked)")
+            # Show unlock message separately
+            ui.show(self.storyteller, "loot: Sword Slash unlocked")
         else:
             # Armor piece
             self.player.add_armor_piece(drop)
-            piece_name = drop.name.replace("_", " ").title()
-            ui.show(self.storyteller, f"loot: Gained armor: {piece_name}.")
+
+    def _apply_loot(self, drop: DropResult) -> None:
+        """Apply loot to player and show narrative message (for post-combat loot)."""
+        # For post-combat loot, include it in the victory description, so we just apply silently
+        # and show unlock messages if needed
+        if drop == DropResult.NO_ITEM:
+            pass  # Nothing to apply
+        elif drop == DropResult.HEALTH_POTION:
+            self.player.inventory.add_potion()
+        elif drop == DropResult.ESCAPE_SCROLL:
+            self.player.inventory.add_escape_scroll()
+        elif drop == DropResult.SHIELD:
+            self.player.has_shield = True
+            self.drop_calculator._shield_dropped = True
+            ui.show(self.storyteller, "loot: Shield Bash unlocked")
+        elif drop == DropResult.SWORD:
+            self.player.has_sword = True
+            self.drop_calculator._sword_dropped = True
+            ui.show(self.storyteller, "loot: Sword Slash unlocked")
+        else:
+            # Armor piece
+            self.player.add_armor_piece(drop)
 
     def _status_text(self) -> str:
         hp = f"HP {self.player.health}/{self.player.max_health}"

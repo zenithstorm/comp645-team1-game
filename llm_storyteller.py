@@ -306,6 +306,121 @@ Write only the description, no quotes or labels:"""
         })
         return description
 
+    def describe_empty_room(self) -> str:
+        """Generate narrative description of a room.
+
+        Returns:
+            A vivid description of an empty, quiet space in the dungeon.
+        """
+        prompt = """A holy knight/paladin enters an empty room of an ancient underground dungeon.
+There are no monsters and no items to collect — only the atmosphere of the space itself.
+
+Write a vivid 1-3 sentence description of this empty room.
+Focus on environmental detail, mood, remnants of bandit activity, and the quiet tension of a place abandoned in haste.
+You may describe old furniture, scattered supplies, broken barricades, makeshift camps, ritual markings, collapsed stonework, or other atmospheric features — but nothing interactable.
+
+Capture the feeling of brief respite mixed with unease, like a dungeon master describing a room between encounters.
+
+Example style:
+"The corridor opens into a cramped study carved into the stone. A toppled desk lies on its side, its drawers yanked out and emptied long ago. Scraps of parchment litter the floor, torn and trampled by both boot and claw."
+"You step into a chamber where crude barricades of crates and broken furniture still lean against the walls. Bandits must have tried to fortify this place, but the splintered wood and dried drag marks suggest they didn't hold it for long."
+"A small campsite occupies the center of the room—cold ashes in a fire pit, bedrolls slashed open, a tin cup kicked against the far wall. Whatever happened here, it ended abruptly."
+
+Write only the description, with no quotes or labels:
+"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        description = self._call_llm(messages, max_tokens=200)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Empty room: {description}"
+        })
+        return description
+
+    def describe_loot_find(
+        self,
+        item: DropResult,
+        has_shield: bool = False,
+        has_sword: bool = False,
+        has_armor: bool = False
+    ) -> str:
+        """Generate narrative description of finding loot in a room.
+
+        Args:
+            item: The item found (DropResult)
+            has_shield: Whether the player has a shield
+            has_sword: Whether the player has a sword
+            has_armor: Whether the player has any armor pieces
+
+        Returns:
+            A vivid description of finding the item.
+        """
+        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+
+        # Format item name
+        if item == DropResult.SHIELD:
+            item_name = "your shield"
+            item_type = "player's stolen gear (shield)"
+        elif item == DropResult.SWORD:
+            item_name = "your sword"
+            item_type = "player's stolen gear (sword)"
+        elif item in DropResult.armor_pieces():
+            item_name = item.name.replace("_", " ").lower()
+            item_type = f"player's stolen gear ({item_name})"
+        elif item == DropResult.HEALTH_POTION:
+            item_name = "a health potion"
+            item_type = "a health potion (regular loot)"
+        elif item == DropResult.ESCAPE_SCROLL:
+            item_name = "an escape scroll"
+            item_type = "an escape scroll (regular loot)"
+        else:
+            item_name = "nothing"
+            item_type = "no items"
+
+        if item == DropResult.NO_ITEM:
+            prompt = f"""A holy knight/paladin searches a room in the dungeon but finds nothing of note.
+
+{player_context}
+
+Write a brief 1-2 sentence description of finding nothing. Be atmospheric and immersive.
+
+Example style:
+"You search the room carefully, but find only dust and decay. Nothing of value remains here."
+
+Write only the description, no quotes or labels:"""
+        else:
+            is_player_gear = item in (DropResult.SHIELD, DropResult.SWORD) or item in DropResult.armor_pieces()
+            gear_context = " This is the player's own stolen equipment that was taken from them during an ambush. Describe it as high-quality holy knight gear." if is_player_gear else " This is regular loot the player finds."
+
+            prompt = f"""A holy knight/paladin searches a room in the dungeon and finds: {item_type}
+
+{player_context}
+{gear_context}
+
+Write a vivid 1-3 sentence description of finding this item. Describe how it's discovered, its condition, and the player's reaction. Be cinematic and immersive, like a dungeon master narrating a discovery.
+
+IMPORTANT: If it's the player's stolen gear (shield, sword, armor), describe it as their own equipment (e.g., "your shield", "your sword", "your helm"). If it's regular loot (potions, scrolls), describe it as something found.
+
+Example style (player's gear):
+"You notice a glint of metal in the corner. As you approach, you recognize the familiar shape of your shield, its radiant emblem still visible beneath a layer of grime. Your fingers close around the cool metal, and a sense of purpose returns to you."
+
+Example style (regular loot):
+"Tucked behind a fallen stone, you discover a small vial of crimson liquid. The glass is intact, and the potion within still glimmers with healing magic."
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        description = self._call_llm(messages, max_tokens=250)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Loot find ({item_name}): {description}"
+        })
+        return description
+
     def describe_victory(
         self,
         monster_name: str,
