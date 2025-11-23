@@ -29,12 +29,14 @@ class Weakness(Enum):
 
 
 class DropResult(Enum):
-    # OO rationale: Single source of truth for all drop types (consumables and
-    # unique armor). Enables centralized probability tables and uniform handling
-    # of loot application without ad-hoc strings.
+    # OO rationale: Single source of truth for all drop types (consumables
+    # and player's unique stolen gear). Enables centralized probability
+    # tables and uniform handling of loot application without ad-hoc strings.
     NO_ITEM = auto()
     HEALTH_POTION = auto()
     ESCAPE_SCROLL = auto()
+    SHIELD = auto()  # guaranteed on 1st monster
+    SWORD = auto()   # guaranteed on 3rd monster
     HELM = auto()
     PAULDRONS = auto()
     CUIRASS = auto()
@@ -149,7 +151,7 @@ class Player(Actor):
 
     def pray_for_restoration(self) -> None:
         self.health = self.max_health
-    
+
     def abilities(self) -> Dict[Action, Callable[[], int]]:
         mapping: Dict[Action, Callable[[], int]] = {Action.HOLY_SMITE: self.holy_smite}
         if self.has_sword:
@@ -168,13 +170,13 @@ class Monster(Actor):
     weaknesses: List[Weakness] = field(default_factory=list)
     description: str = ""
     is_boss: bool = False
-    guaranteed_drop: Optional["DropResult"] = None
+    item_drop: Optional["DropResult"] = None
 
     def attack(self) -> int:
         # Slight randomness to monster damage
         variance = random.randint(0, 2)
         return self.strength + variance
-    
+
     def apply_weakness_bonus(self, action: Action, base_damage: int) -> int:
         action_to_weakness = {
             Action.HOLY_SMITE: Weakness.HOLY_SMITE,
@@ -185,5 +187,3 @@ class Monster(Actor):
         if weakness_for_action is not None and weakness_for_action in self.weaknesses:
             return base_damage + config.WEAKNESS_BONUS_DAMAGE
         return base_damage
-
-

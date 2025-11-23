@@ -6,7 +6,7 @@ New OpenAI accounts get free credits ($5-18), and gpt-4o-mini is very affordable
 
 from __future__ import annotations
 
-from typing import Union, List
+from typing import Union, List, Optional
 
 # Handle both package and direct imports
 try:
@@ -36,7 +36,7 @@ class LLMStoryTeller:
             raise ImportError(
                 "openai package not installed. Install with: pip install openai"
             )
-        
+
         self.client = OpenAI(api_key=api_key)
         self.model = model
         # Maintain conversation history for the game session
@@ -138,7 +138,7 @@ class LLMStoryTeller:
         has_armor: bool = False
     ) -> str:
         """Generate narrative description of a player's combat action.
-        
+
         Args:
             action: The action name (e.g., "Holy Smite", "Shield Bash", "Sword Slash")
             monster_name: Name of the monster
@@ -151,7 +151,7 @@ class LLMStoryTeller:
         """
         player_context = self._get_player_context(has_shield, has_sword, has_armor)
         weakness_text = " The creature is particularly vulnerable to this attack!" if is_weakness else ""
-        
+
         prompt = f"""A holy knight/paladin is in combat with:
 - Monster: {monster_name}
 - Description: {monster_description}
@@ -174,7 +174,7 @@ Write only the description, no quotes or labels:"""
 
         messages = self.conversation_history.copy()
         messages.append({"role": "user", "content": prompt})
-        
+
         description = self._call_llm(messages, max_tokens=250)
         self.conversation_history.append({
             "role": "assistant",
@@ -193,7 +193,7 @@ Write only the description, no quotes or labels:"""
         has_armor: bool = False
     ) -> str:
         """Generate narrative description of a monster's attack.
-        
+
         Args:
             monster_name: Name of the monster
             monster_description: Description of the monster
@@ -241,7 +241,7 @@ Write only the description, no quotes or labels:"""
         has_armor: bool = False
     ) -> str:
         """Generate narrative description of defeating a monster.
-        
+
         Args:
             monster_name: Name of the monster
             monster_description: Description of the monster
@@ -257,7 +257,7 @@ Write only the description, no quotes or labels:"""
                 items_text = f" The creature had: {items_acquired[0]}"
             else:
                 items_text = f" The creature had: {', '.join(items_acquired[:-1])}, and {items_acquired[-1]}"
-        
+
         prompt = f"""A holy knight/paladin has just defeated:
 - Monster: {monster_name}
 - Description: {monster_description}
@@ -299,7 +299,7 @@ Write only the description, no quotes or labels:"""
 
     def describe_pray(self, has_shield: bool = False, has_sword: bool = False, has_armor: bool = False) -> str:
         """Generate narrative description of the player praying for restoration.
-        
+
         Args:
             has_shield: Whether the player has a shield
             has_sword: Whether the player has a sword
@@ -333,7 +333,7 @@ Write only the description, no quotes or labels:"""
         """Generate narrative description of using a health potion."""
         if not had_potion:
             return "You reach for a potion, but your inventory is empty. No healing awaits you."
-        
+
         prompt = """A holy knight/paladin drinks a health potion during combat or rest.
 
 Write a vivid 2-3 sentence description of drinking the potion. Describe the act of drinking, the taste, and the healing effect. Be atmospheric and immersive, like a dungeon master narrating item use.
@@ -379,35 +379,44 @@ Write only the description, no quotes or labels:"""
         self,
         monster_name: str,
         monster_description: str,
-        items: List[Union[DropResult, str]]
+        item: Optional[DropResult]
     ) -> str:
         """Generate a full narrative encounter description like a dungeon master.
 
         Args:
             monster_name: Name of the monster (e.g., "Giant Rat")
             monster_description: Base description of the monster
-            items: List of items that will be dropped (shields, swords, potions, etc.)
+            item: The item that will drop (None or NO_ITEM means no item)
 
         Returns:
             A full narrative description of the encounter scene.
         """
-        # Build list of item names
-        item_names = []
-        for item in items:
-            if isinstance(item, DropResult):
-                if item != DropResult.NO_ITEM:
-                    item_names.append(item.name.replace("_", " ").lower())
-            elif isinstance(item, str):
-                item_names.append(item)
+        # Determine if item is player's stolen gear or monster's regular loot
+        is_player_gear = False
+        item_description = ""
+
+        if item is not None and item != DropResult.NO_ITEM:
+            # Player's stolen gear: shield, sword, and all armor pieces
+            if item in (DropResult.SHIELD, DropResult.SWORD) or item in DropResult.armor_pieces():
+                is_player_gear = True
+                if item == DropResult.SHIELD:
+                    item_description = "a shield"
+                elif item == DropResult.SWORD:
+                    item_description = "a sword"
+                else:
+                    # Armor piece
+                    item_description = item.name.replace("_", " ").lower()
+            else:
+                # Regular monster loot (potions, scrolls)
+                is_player_gear = False
+                item_description = item.name.replace("_", " ").lower()
 
         items_text = ""
-        if item_names:
-            if len(item_names) == 1:
-                items_text = f"The creature has or is near: {item_names[0]}"
-            elif len(item_names) == 2:
-                items_text = f"The creature has or is near: {item_names[0]} and {item_names[1]}"
+        if item_description:
+            if is_player_gear:
+                items_text = f"The creature has or is near: {item_description} (this is the player's stolen holy knight gear)"
             else:
-                items_text = f"The creature has or is near: {', '.join(item_names[:-1])}, and {item_names[-1]}"
+                items_text = f"The creature has or is near: {item_description} (this is regular loot the monster has)"
 
         prompt = f"""You are a dungeon master describing a scene to players. A holy knight/paladin enters a room and encounters:
 
@@ -415,16 +424,21 @@ Monster: {monster_name}
 Description: {monster_description}
 {f"Items present: {items_text}" if items_text else "No notable items visible."}
 
-Write a vivid, atmospheric 2-4 sentence description of this encounter scene. Describe the monster naturally as part of the scene, not as a mechanical announcement. 
+IMPORTANT: If the item is marked as "player's stolen holy knight gear" (shield, sword, or any armor piece), describe it as the player's own high-quality equipment that was stolen by goblin bandits. Use phrases like "your gleaming shield", "your blessed sword", "your ornate helm", etc. - these are the paladin's own gear, fit for a holy knight. If the item is marked as "regular loot" (potions, scrolls), describe it as something the monster naturally has or has scavenged.
+
+Write a vivid, atmospheric 2-4 sentence description of this encounter scene. Describe the monster naturally as part of the scene, not as a mechanical announcement.
 - Start with the scene/setting (torchlight, shadows, sounds, etc.)
 - Describe the monster as the player would see it
-- If items are present, weave them naturally into the description (these are the player's stolen gear, fit for a holy knight)
+- If an item is present, weave it naturally into the description
 - Be immersive and atmospheric, like you're telling a story at a tabletop game
 - Do NOT start with "Enemy spotted:" or similar mechanical phrases
 - Write in second person ("you see", "you notice", etc.)
 
-Example style:
-"The torchlight flickers as you round the corner, revealing a massive rat with patchy fur and prominent incisors. It scuttles nervously, low to the ground, always testing distance. The creature drags your gleaming shield behind it, the radiant emblem of your order dulled by dirt but still flickering with remnants of divine light."
+Example style (with player's gear):
+"A massive rat startles at your approach, its whiskers twitching above a shallow pile of scavenged debris. Half-buried there is your shield—its radiant crest muted under dust but unmistakably yours. The creature chitters defensively, as if guarding the strange prize it claimed."
+
+Example style (with monster loot):
+"The dim corridor opens into a wider chamber where a skeletal figure stands guard, its hollow eyes fixed on you. In its bony grasp, you notice a small vial of crimson liquid - a health potion, likely scavenged from some unfortunate adventurer."
 
 Write only the description, no quotes or labels:"""
 
@@ -441,9 +455,9 @@ Write only the description, no quotes or labels:"""
         return description
 
     def describe_item_in_context(
-        self, 
-        item: Union[DropResult, str], 
-        monster_name: str, 
+        self,
+        item: Union[DropResult, str],
+        monster_name: str,
         monster_description: str
     ) -> str:
         """Generate creative description using OpenAI."""
@@ -464,7 +478,7 @@ Write only the description, no quotes or labels:"""
 
 The monster will drop: {item_name}
 
-Write a single, creative sentence (15-30 words) describing how this item appears in relation to the monster. 
+Write a single, creative sentence (15-30 words) describing how this item appears in relation to the monster.
 The item is the player's stolen gear (fit for a holy knight), not crude or battered equipment. Consider the monster's nature from its description. Be atmospheric and immersive.
 
 Examples:
@@ -486,4 +500,3 @@ Write only the sentence, no quotes or extra text:"""
         })
         # Ensure it starts with a space if not empty
         return f" {description}" if description else ""
-

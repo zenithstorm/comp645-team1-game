@@ -47,5 +47,3 @@ DROP_WEIGHTS = {
     # Armor has a small chance; if exhausted, it falls back to other results
     "ARMOR": 0.1,
 }
-
-

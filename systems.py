@@ -139,11 +139,36 @@ class DropCalculator:
     # OO rationale: Encapsulates loot rules and unique item availability.
     # This isolates drop probability and uniqueness constraints from combat
     # flow, making it easy to tune or swap strategies.
-    """Handles loot generation with unique armor pieces."""
+    """Handles loot generation with unique armor pieces and scripted gear recovery."""
 
     def __init__(self, random_provider: RandomProvider) -> None:
         self.random_provider = random_provider
         self._remaining_armor: List[DropResult] = list(DropResult.armor_pieces())
+        self._shield_dropped: bool = False
+        self._sword_dropped: bool = False
+
+    def get_drop_for_monster(self, defeated_count: int, player: Player) -> DropResult:
+        """Get the drop for a monster encounter (guaranteed progression items or random drop).
+
+        Checks for guaranteed progression items (shield/sword) first, then falls back
+        to a random drop if no guaranteed item is due.
+
+        Args:
+            defeated_count: Number of monsters defeated so far
+            player: Player instance to check current equipment
+
+        Returns:
+            DropResult for the item that will drop
+        """
+        # Check for guaranteed progression items first
+        # Shield guaranteed on 1st monster (defeated_count will be 1 after this fight)
+        if defeated_count == 0 and not player.has_shield and not self._shield_dropped:
+            return DropResult.SHIELD
+        # Sword guaranteed on 3rd monster (defeated_count will be 3 after this fight)
+        if defeated_count == 2 and not player.has_sword and not self._sword_dropped:
+            return DropResult.SWORD
+        # Otherwise, roll for a random drop
+        return self.roll_item_drop()
 
     def roll_item_drop(self) -> DropResult:
         # Build base weights
@@ -178,32 +203,7 @@ class DropCalculator:
         return DropResult.NO_ITEM
 
 
-class Progression:
-    # OO rationale: Encapsulates scripted unlock logic based on game progress.
-    # Separates progression rules from game orchestration, making unlock
-    # conditions easy to modify and test independently.
-    """Handles scripted unlocks based on defeated monsters count."""
-
-    def get_pending_unlocks(self, defeated_count: int, player: Player) -> List[str]:
-        """Predict what will be unlocked when the next monster is defeated. Returns list of item names."""
-        pending: List[str] = []
-        next_count = defeated_count + 1
-        if next_count == 1 and not player.has_shield:
-            pending.append("shield")
-        if next_count == 3 and not player.has_sword:
-            pending.append("sword")
-        return pending
-
-    def check_and_apply_unlocks(self, defeated_count: int, player: Player) -> List[str]:
-        """Check unlock conditions and apply them to the player. Returns list of unlock messages."""
-        messages: List[str] = []
-        if defeated_count == 1 and not player.has_shield:
-            player.has_shield = True
-            messages.append("loot: Shield acquired. (Shield Bash unlocked)")
-        if defeated_count == 3 and not player.has_sword:
-            player.has_sword = True
-            messages.append("loot: Sword acquired. (Sword Slash unlocked)")
-        return messages
+# Progression class removed - shield/sword are now handled as guaranteed drops
 
 
 class GameSystem:
@@ -238,7 +238,6 @@ class GameSystem:
         self.current_monster: Optional[Monster] = None
         self.drop_calculator = DropCalculator(self.random_provider)
         self.monster_generator = MonsterGenerator(self.random_provider)
-        self.progression = Progression()
         self.defeated_monsters_count: int = 0
         self.game_won: bool = False
 
@@ -289,16 +288,15 @@ class GameSystem:
         Returns:
             List of item names (e.g., ["a shield", "health potion"])
         """
-        items = []
-        pending_unlocks = self.progression.get_pending_unlocks(self.defeated_monsters_count, self.player)
-        if "shield" in pending_unlocks:
-            items.append("a shield")
-        if "sword" in pending_unlocks:
-            items.append("a sword")
-        if monster.guaranteed_drop is not None and monster.guaranteed_drop != DropResult.NO_ITEM:
-            item_name = monster.guaranteed_drop.name.replace("_", " ").lower()
-            items.append(item_name)
-        return items
+        if monster.item_drop is None or monster.item_drop == DropResult.NO_ITEM:
+            return []
+        # Format shield/sword as "a shield"/"a sword" for narrative consistency
+        if monster.item_drop == DropResult.SHIELD:
+            return ["a shield"]
+        if monster.item_drop == DropResult.SWORD:
+            return ["a sword"]
+        item_name = monster.item_drop.name.replace("_", " ").lower()
+        return [item_name]
 
     def start_game(self) -> None:
         debug_print("start_game() called")
@@ -389,9 +387,9 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             return
         # Monster room
         debug_print("Monster room - generating monster")
-        # Roll the drop now so we can describe it in the encounter
-        guaranteed_drop = self.drop_calculator.roll_item_drop()
-        debug_print(f"Guaranteed drop: {guaranteed_drop}")
+        # Get the drop for this monster
+        drop = self.drop_calculator.get_drop_for_monster(self.defeated_monsters_count, self.player)
+        debug_print(f"Monster drop: {drop}")
         # Small chance to encounter the boss after some progress
         if self.defeated_monsters_count >= config.BOSS_SPAWN_THRESHOLD and self.random_provider.random() < config.BOSS_SPAWN_CHANCE:
             debug_print("Generating boss")
@@ -400,12 +398,8 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             debug_print("Generating regular monster")
             self.current_monster = self.monster_generator.generate_monster()
         debug_print(f"Monster generated: {self.current_monster.name}")
-        # Store the guaranteed drop on the monster
-        self.current_monster.guaranteed_drop = guaranteed_drop
-        # Only show the guaranteed drop in the encounter (unlocks are revealed after victory)
-        items: List[Union[DropResult, str]] = (
-            [guaranteed_drop] if guaranteed_drop != DropResult.NO_ITEM else []
-        )
+        # Store the drop on the monster
+        self.current_monster.item_drop = drop
         # Generate full narrative encounter description from LLM
         debug_print("Generating full encounter description...")
         if not DEBUG:
@@ -414,7 +408,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             description = self.storyteller.describe_encounter(
                 self.current_monster.name,
                 self.current_monster.description,
-                items
+                drop if drop != DropResult.NO_ITEM else None
             )
             if not DEBUG:
                 print("\r" + " " * 30 + "\r", end="", flush=True)
@@ -563,13 +557,9 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         if monster.is_boss:
             self.game_won = True
             return
-        # Scripted unlocks
-        unlock_messages = self.progression.check_and_apply_unlocks(self.defeated_monsters_count, self.player)
-        for message in unlock_messages:
-            ui.show(self.storyteller, message)
-        # Use the guaranteed drop that was determined when the monster was encountered
+        # Apply the drop that was determined when the monster was encountered
         # (fallback to rolling if somehow drop wasn't set, though this shouldn't happen)
-        drop = monster.guaranteed_drop if monster.guaranteed_drop is not None else self.drop_calculator.roll_item_drop()
+        drop = monster.item_drop if monster.item_drop is not None else self.drop_calculator.roll_item_drop()
         self._apply_loot(drop)
 
     def _apply_loot(self, drop: DropResult) -> None:
@@ -582,6 +572,14 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         elif drop == DropResult.ESCAPE_SCROLL:
             self.player.inventory.add_escape_scroll()
             ui.show(self.storyteller, "loot: Gained 1 Escape Scroll.")
+        elif drop == DropResult.SHIELD:
+            self.player.has_shield = True
+            self.drop_calculator._shield_dropped = True
+            ui.show(self.storyteller, "loot: Shield acquired. (Shield Bash unlocked)")
+        elif drop == DropResult.SWORD:
+            self.player.has_sword = True
+            self.drop_calculator._sword_dropped = True
+            ui.show(self.storyteller, "loot: Sword acquired. (Sword Slash unlocked)")
         else:
             # Armor piece
             self.player.add_armor_piece(drop)
