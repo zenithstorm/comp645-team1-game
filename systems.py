@@ -462,53 +462,46 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 is_weakness = (weakness_for_action is not None and
                               weakness_for_action in self.current_monster.weaknesses and
                               damage_amount > base_damage)
-                # Check if this will be a killing blow before applying damage
-                will_kill = damage_amount >= self.current_monster.health
+                # Apply player damage
                 damage_taken = self.current_monster.take_damage(damage_amount)
+                monster_died = not self.current_monster.is_alive()
+
+                # Handle monster retaliation if it survived
+                monster_retaliation_damage = None
+                player_health_after = None
+                if not monster_died:
+                    incoming = self.current_monster.attack()
+                    monster_retaliation_damage = self.player.take_damage(incoming, defense=self.player.get_defense())
+                    player_health_after = self.player.health
 
                 has_shield, has_sword, has_armor = self._get_player_equipment_state()
 
-                # If this is a killing blow, skip the action description and let victory handle it
-                if not will_kill:
+                # Generate single narrative for the complete combat turn
+                if monster_died:
+                    # If monster died, let victory handle the narrative (includes the killing blow)
+                    self.defeated_monsters_count += 1
+                    self._post_fight_rewards(self.current_monster, chosen, is_weakness)
+                    self.current_monster = None
+                    return
+                else:
+                    # Monster survived - describe the complete turn (player action + monster retaliation)
                     self._call_storyteller_with_loading(
-                        lambda: self.storyteller.describe_player_action(
+                        lambda: self.storyteller.describe_combat_turn(
                             self._action_label(chosen),
                             self.current_monster.name,
                             self.current_monster.description,
                             damage_taken,
                             is_weakness,
+                            monster_died=False,
+                            monster_retaliation_damage=monster_retaliation_damage,
+                            player_health_after=player_health_after,
                             has_shield=has_shield,
                             has_sword=has_sword,
                             has_armor=has_armor
                         ),
-                        "attack",
-                        f"Your {self._action_label(chosen).lower()} strikes for {damage_taken} damage."
+                        "combat",
+                        f"Your {self._action_label(chosen).lower()} strikes for {damage_taken} damage. The enemy attacks for {monster_retaliation_damage} damage."
                     )
-
-                if not self.current_monster.is_alive():
-                    self.defeated_monsters_count += 1
-                    self._post_fight_rewards(self.current_monster, chosen, is_weakness)
-                    self.current_monster = None
-                    return
-
-            # Monster retaliates if still alive
-            if self.current_monster and self.current_monster.is_alive():
-                incoming = self.current_monster.attack()
-                reduced = self.player.take_damage(incoming, defense=self.player.get_defense())
-                has_shield, has_sword, has_armor = self._get_player_equipment_state()
-                self._call_storyteller_with_loading(
-                    lambda: self.storyteller.describe_monster_attack(
-                        self.current_monster.name,
-                        self.current_monster.description,
-                        reduced,
-                        self.player.health,
-                        has_shield=has_shield,
-                        has_sword=has_sword,
-                        has_armor=has_armor
-                    ),
-                    "retaliation",
-                    f"The enemy attacks for {reduced} damage."
-                )
 
     def _combat_options(self) -> List[Action]:
         options: List[Action] = list(self.player.abilities().keys())

@@ -182,6 +182,81 @@ Write only the description, no quotes or labels:"""
         })
         return description
 
+    def describe_combat_turn(
+        self,
+        action: str,
+        monster_name: str,
+        monster_description: str,
+        player_damage: int,
+        is_weakness: bool,
+        monster_died: bool,
+        monster_retaliation_damage: Optional[int] = None,
+        player_health_after: Optional[int] = None,
+        has_shield: bool = False,
+        has_sword: bool = False,
+        has_armor: bool = False
+    ) -> str:
+        """Generate narrative description of a complete combat turn (player action + monster response).
+
+        Args:
+            action: The player's action name (e.g., "Holy Smite", "Shield Bash", "Sword Slash")
+            monster_name: Name of the monster
+            monster_description: Description of the monster
+            player_damage: Damage dealt by the player
+            is_weakness: Whether the player's attack was a weakness hit
+            monster_died: Whether the monster died from this attack
+            monster_retaliation_damage: Damage dealt by monster's retaliation (None if monster died)
+            player_health_after: Player's health after monster's attack (None if monster died)
+            has_shield: Whether the player has a shield
+            has_sword: Whether the player has a sword
+            has_armor: Whether the player has any armor pieces
+        """
+        player_context = self._get_player_context(has_shield, has_sword, has_armor)
+        weakness_text = " The creature is particularly vulnerable to this attack!" if is_weakness else ""
+
+        retaliation_text = ""
+        if not monster_died and monster_retaliation_damage is not None:
+            retaliation_text = f"\n\nAfter the attack, the {monster_name} retaliates, dealing {monster_retaliation_damage} damage. The player's remaining health is {player_health_after}."
+
+        prompt = f"""A holy knight/paladin is in combat with:
+- Monster: {monster_name}
+- Description: {monster_description}
+
+{player_context}
+
+The player uses: {action}
+Damage dealt: {player_damage}{weakness_text}
+{'The monster is defeated by this attack!' if monster_died else 'The monster survives and retaliates.'}
+{retaliation_text}
+
+Write a vivid 2-4 sentence description of this complete combat exchange. Describe:
+1. The player's action (how they strike, the divine power or weapon, the impact)
+2. The monster's reaction
+3. If the monster survived, describe its counterattack and the player's response
+4. If the monster died, describe its final moments
+
+Be cinematic and immersive, like a dungeon master narrating a complete combat turn. Flow naturally from the player's action to the monster's response (or death).
+
+IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing that might be worn under armor, not armor. If they don't have a shield, they can't raise a shield to block.
+
+Example style (monster survives):
+"You raise your hand, calling upon the Light, and divine radiance blazes forth, striking the creature with searing holy energy. The monster recoils as the sacred power burns through its form, but it quickly recovers and lunges forward with surprising speed. Claws rake across your clothing as you try to dodge, leaving you winded and bleeding."
+
+Example style (monster dies):
+"You raise your hand, fingers outstretched, as the Light gathers around you in a brilliant aura. A surge of divine energy flows through your veins, igniting your spirit with righteous fury. With a thrust of your palm, you unleash a blinding beam of holy power that strikes the giant rat, searing through its matted fur and scorching its flesh. The creature lets out a piercing shriek, its body convulsing under the purifying light, before collapsing to the ground, smoldering and defeated."
+
+Write only the description, no quotes or labels:"""
+
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        description = self._call_llm(messages, max_tokens=350)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"Combat turn ({action}): {description}"
+        })
+        return description
+
     def describe_monster_attack(
         self,
         monster_name: str,
