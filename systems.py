@@ -61,7 +61,6 @@ def pick_weighted(buckets: List[Tuple[str, float]], random_provider: RandomProvi
             return label
     return buckets[-1][0]
 
-
 class MonsterGenerator:
     # OO rationale: Factory responsible for building fully-formed Monster
     # instances from templates. Centralizes variability (names, stats,
@@ -134,7 +133,6 @@ class MonsterGenerator:
             is_boss=True,
         )
 
-
 class DropCalculator:
     # OO rationale: Encapsulates loot rules and unique item availability.
     # This isolates drop probability and uniqueness constraints from combat
@@ -201,10 +199,6 @@ class DropCalculator:
             self._remaining_armor.remove(armor_piece)
             return armor_piece
         return DropResult.NO_ITEM
-
-
-# Progression class removed - shield/sword are now handled as guaranteed drops
-
 
 class GameSystem:
     # OO rationale: Orchestrator and state machine for the game flow. It
