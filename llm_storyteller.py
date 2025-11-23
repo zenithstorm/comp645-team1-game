@@ -161,12 +161,12 @@ class LLMStoryTeller:
 The player uses: {action}
 Damage dealt: {damage}{weakness_text}
 
-Write a vivid 2-3 sentence description of how this action unfolds. Describe the holy knight's movements, the divine power or weapon, and the impact on the monster. Be cinematic and immersive, like a dungeon master narrating combat.
+Write a vivid 1-3 sentence description of how this action unfolds. Describe the holy knight's movements, the divine power or weapon, and the impact on the monster. Be cinematic and immersive, like a dungeon master narrating combat.
 
-IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing/robes, not armor.
+IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing that might be worn under armor, not armor.
 
 Examples:
-- For Holy Smite (no equipment): "You raise your hand, calling upon the Light. Divine radiance blazes forth, striking the creature with searing holy energy. The monster recoils as the sacred power burns through its form."
+- For Holy Smite (no equipment): "You raise your hand, calling upon the Light, and divine radiance blazes forth, striking the creature with searing holy energy. The monster recoils as the sacred power burns through its form."
 - For Shield Bash (has shield): "You surge forward, your shield leading the charge. The heavy impact sends the creature staggering backward, its balance broken by the weight of your righteous defense."
 - For Sword Slash (has sword): "Your blade arcs through the air, catching the torchlight. The steel finds its mark, cutting deep as you channel your strength into the strike."
 
@@ -212,12 +212,12 @@ Write only the description, no quotes or labels:"""
 
 {player_context}
 
-Write a vivid 2-3 sentence description of the monster's attack. Describe how the creature strikes, the knight's reaction, and the impact. Be cinematic and immersive, like a dungeon master narrating combat.
+Write a vivid 1-3 sentence description of the monster's attack. Describe how the creature strikes, the knight's reaction, and the impact. Be cinematic and immersive, like a dungeon master narrating combat.
 
-IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing/robes, not armor. If they don't have a shield, they can't raise a shield to block.
+IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing that might be worn under armor, not armor. If they don't have a shield, they can't raise a shield to block.
 
 Example style (no armor, no shield):
-"The creature lunges forward with surprising speed, claws raking across your robes. You try to dodge, but the force of the blow still finds its way through, leaving you winded and bleeding."
+"The creature lunges forward with surprising speed, claws raking across your clothing. You try to dodge, but the force of the blow still finds its way through, leaving you winded and bleeding."
 
 Write only the description, no quotes or labels:"""
 
@@ -238,7 +238,9 @@ Write only the description, no quotes or labels:"""
         items_acquired: List[str],
         has_shield: bool = False,
         has_sword: bool = False,
-        has_armor: bool = False
+        has_armor: bool = False,
+        final_action: Optional[str] = None,
+        is_weakness: bool = False
     ) -> str:
         """Generate narrative description of defeating a monster.
 
@@ -249,6 +251,8 @@ Write only the description, no quotes or labels:"""
             has_shield: Whether the player already has a shield (before acquiring new items)
             has_sword: Whether the player already has a sword (before acquiring new items)
             has_armor: Whether the player already has any armor pieces (before acquiring new items)
+            final_action: The action that killed the monster (e.g., "Holy Smite", "Shield Bash")
+            is_weakness: Whether the final action was a weakness hit
         """
         player_context = self._get_player_context(has_shield, has_sword, has_armor)
         items_text = ""
@@ -258,19 +262,28 @@ Write only the description, no quotes or labels:"""
             else:
                 items_text = f" The creature had: {', '.join(items_acquired[:-1])}, and {items_acquired[-1]}"
 
-        prompt = f"""A holy knight/paladin has just defeated:
+        action_text = ""
+        if final_action:
+            weakness_text = " (this was a weakness hit - especially effective)" if is_weakness else ""
+            action_text = f"\nThe knight defeated it with: {final_action}{weakness_text}"
+
+        prompt = f"""A holy knight/paladin has just defeated a monster with a final blow:
 - Monster: {monster_name}
 - Description: {monster_description}
+{action_text}
 {items_text}
 
 {player_context}
 
-Write a vivid 2-3 sentence description of the monster's defeat. Describe how it falls, the final moments, and if items are present, how the knight retrieves them. Be cinematic and immersive, like a dungeon master narrating victory.
+Write a vivid 2-4 sentence description that combines BOTH the final attack and the monster's defeat. Describe the attack itself (how the knight strikes), the monster's reaction and final moments, how it falls, and if items are present, how the knight retrieves them. Be cinematic and immersive, like a dungeon master narrating a complete victory scene.
 
-IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it or is acquiring it. If they don't have armor, describe them in simple clothing/robes, not armor.
+IMPORTANT:
+- Include the attack description in the narrative (e.g., "You raise your hand and unleash a blinding beam of holy power...")
+- Only mention equipment (shield, sword, armor) if the player actually has it or is acquiring it
+- If they don't have armor, describe them in simple clothing that might be worn under armor, not armor
 
 Example style:
-"The skeleton's bones rattle one last time as your holy smite shatters its form. It collapses in a heap of scattered bones, the dark magic animating it finally extinguished. You notice your shield clutched in its bony grasp and carefully retrieve it, feeling the familiar weight return to your arm."
+"You raise your hand, fingers outstretched, as the Light gathers around you in a brilliant aura. A surge of divine energy flows through your veins, igniting your spirit with righteous fury. With a thrust of your palm, you unleash a blinding beam of holy power that strikes the giant rat, searing through its matted fur and scorching its flesh. The creature lets out a piercing shriek, its body convulsing under the purifying light, before collapsing to the ground, smoldering and defeated. As you step closer, your heart races at the sight of your shield, half-buried beneath the rat's remains; you reach down, fingers trembling with anticipation, and grasp the familiar, cool metal, reclaiming a piece of your lost honor."
 
 Write only the description, no quotes or labels:"""
 
@@ -288,7 +301,7 @@ Write only the description, no quotes or labels:"""
         """Generate context string about the player's current equipment state."""
         equipment = []
         if not has_shield and not has_sword and not has_armor:
-            return "IMPORTANT: The player has NO armor, NO shield, and NO sword. All their gear was stolen by goblin bandits. They are wearing only basic clothing/robes, not armor."
+            return "IMPORTANT: The player has NO armor, NO shield, and NO sword. All their gear was stolen by goblin bandits. They are wearing only basic clothing that might be worn under armor, not armor."
         if has_shield:
             equipment.append("shield")
         if has_sword:
@@ -310,9 +323,9 @@ Write only the description, no quotes or labels:"""
 
 {player_context}
 
-Write a vivid 2-3 sentence description of the prayer. Describe how the knight kneels, calls upon their god, and feels the divine light heal their wounds. Be atmospheric and immersive, like a dungeon master narrating a moment of faith.
+Write a vivid 1-3 sentence description of the prayer. Describe how the knight kneels, calls upon their god, and feels the divine light heal their wounds. Be atmospheric and immersive, like a dungeon master narrating a moment of faith.
 
-IMPORTANT: Do NOT mention armor, shield, or sword unless the player actually has them. If they don't have armor, describe them in simple clothing/robes, not armor.
+IMPORTANT: Do NOT mention armor, shield, or sword unless the player actually has them. If they don't have armor, describe them in simple clothing that might be worn under armor, not armor.
 
 Example style (when no armor):
 "You drop to one knee on the cold stone, pressing your hands together in prayer. The words of devotion flow from your lips as you call upon the Light. Warm, golden radiance envelops you, and you feel your wounds knitting closed, your strength returning. The divine power courses through you, and you rise, ready to continue your quest."
@@ -336,7 +349,7 @@ Write only the description, no quotes or labels:"""
 
         prompt = """A holy knight/paladin drinks a health potion during combat or rest.
 
-Write a vivid 2-3 sentence description of drinking the potion. Describe the act of drinking, the taste, and the healing effect. Be atmospheric and immersive, like a dungeon master narrating item use.
+Write a vivid 1-3 sentence description of drinking the potion. Describe the act of drinking, the taste, and the healing effect. Be atmospheric and immersive, like a dungeon master narrating item use.
 
 Example style:
 "You uncork the vial and drink the shimmering liquid in one swift motion. The potion tastes of honey and light, spreading warmth through your body. Your wounds close, your breathing steadies, and strength floods back into your limbs."
@@ -359,7 +372,7 @@ Write only the description, no quotes or labels:"""
 
 The attempt was {'successful' if success else 'unsuccessful'}.
 
-Write a vivid 2-3 sentence description of the attempt to flee. Be atmospheric and immersive, like a dungeon master narrating escape.
+Write a vivid 1-3 sentence description of the attempt to flee. Be atmospheric and immersive, like a dungeon master narrating escape.
 
 {'Example for success: "You break away from the creature, turning and sprinting down the corridor. The monster\'s snarls fade behind you as you put distance between yourself and danger."' if success else 'Example for failure: "You try to disengage, but the creature is too quick. Its claws rake across your back as you turn, forcing you back into the fight."'}
 
@@ -426,7 +439,7 @@ Description: {monster_description}
 
 IMPORTANT: If the item is marked as "player's stolen holy knight gear" (shield, sword, or any armor piece), describe it as the player's own high-quality equipment that was stolen by goblin bandits. Use phrases like "your gleaming shield", "your blessed sword", "your ornate helm", etc. - these are the paladin's own gear, fit for a holy knight. If the item is marked as "regular loot" (potions, scrolls), describe it as something the monster naturally has or has scavenged.
 
-Write a vivid, atmospheric 2-4 sentence description of this encounter scene. Describe the monster naturally as part of the scene, not as a mechanical announcement.
+Write a vivid, atmospheric 1-4 sentence description of this encounter scene. Describe the monster naturally as part of the scene, not as a mechanical announcement.
 - Start with the scene/setting (torchlight, shadows, sounds, etc.)
 - Describe the monster as the player would see it
 - If an item is present, weave it naturally into the description

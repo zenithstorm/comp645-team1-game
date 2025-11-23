@@ -462,26 +462,32 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 is_weakness = (weakness_for_action is not None and
                               weakness_for_action in self.current_monster.weaknesses and
                               damage_amount > base_damage)
+                # Check if this will be a killing blow before applying damage
+                will_kill = damage_amount >= self.current_monster.health
                 damage_taken = self.current_monster.take_damage(damage_amount)
 
                 has_shield, has_sword, has_armor = self._get_player_equipment_state()
-                self._call_storyteller_with_loading(
-                    lambda: self.storyteller.describe_player_action(
-                        self._action_label(chosen),
-                        self.current_monster.name,
-                        self.current_monster.description,
-                        damage_taken,
-                        is_weakness,
-                        has_shield=has_shield,
-                        has_sword=has_sword,
-                        has_armor=has_armor
-                    ),
-                    "attack",
-                    f"Your {self._action_label(chosen).lower()} strikes for {damage_taken} damage."
-                )
+
+                # If this is a killing blow, skip the action description and let victory handle it
+                if not will_kill:
+                    self._call_storyteller_with_loading(
+                        lambda: self.storyteller.describe_player_action(
+                            self._action_label(chosen),
+                            self.current_monster.name,
+                            self.current_monster.description,
+                            damage_taken,
+                            is_weakness,
+                            has_shield=has_shield,
+                            has_sword=has_sword,
+                            has_armor=has_armor
+                        ),
+                        "attack",
+                        f"Your {self._action_label(chosen).lower()} strikes for {damage_taken} damage."
+                    )
+
                 if not self.current_monster.is_alive():
                     self.defeated_monsters_count += 1
-                    self._post_fight_rewards(self.current_monster)
+                    self._post_fight_rewards(self.current_monster, chosen, is_weakness)
                     self.current_monster = None
                     return
 
@@ -530,9 +536,19 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         base = dmg_fn()
         return monster.apply_weakness_bonus(action, base)
 
-    def _post_fight_rewards(self, monster: Monster) -> None:
+    def _post_fight_rewards(self, monster: Monster, final_action: Optional[Action] = None, is_weakness: bool = False) -> None:
+        """Handle post-fight rewards and victory narration.
+
+        Args:
+            monster: The defeated monster
+            final_action: The action that killed the monster (if known)
+            is_weakness: Whether the final action was a weakness hit
+        """
         items_acquired = self._collect_items_acquired(monster)
         has_shield, has_sword, has_armor = self._get_player_equipment_state()
+
+        # If we know the final action, include it in the victory description
+        action_label = self._action_label(final_action) if final_action else None
 
         self._call_storyteller_with_loading(
             lambda: self.storyteller.describe_victory(
@@ -541,7 +557,9 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 items_acquired,
                 has_shield=has_shield,
                 has_sword=has_sword,
-                has_armor=has_armor
+                has_armor=has_armor,
+                final_action=action_label,
+                is_weakness=is_weakness
             ),
             "victory",
             "Enemy defeated."
