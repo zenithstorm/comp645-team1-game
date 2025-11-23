@@ -173,10 +173,9 @@ class Player(Actor):
 @dataclass
 class Monster(Actor):
     # OO rationale: Concrete combatant representing adversaries. Holds static
-    # traits (name, type, description) and combat modifiers (weaknesses).
+    # traits (name, description) and combat modifiers (weaknesses).
     # Weakness handling is encapsulated to keep GameSystem orchestration lean.
     name: str = "Unknown"
-    type: str = "Unknown"
     weaknesses: List[Weakness] = field(default_factory=list)
     description: str = ""
     is_boss: bool = False

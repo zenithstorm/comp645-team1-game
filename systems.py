@@ -25,22 +25,22 @@ class StoryTeller:
         suffix = " ⟣"
         return f"{prefix}{context.strip()}{suffix}"
 
-    def describe_item_in_context(self, item: Union[DropResult, str], monster_name: str, monster_type: str, monster_description: str) -> str:
+    def describe_item_in_context(self, item: Union[DropResult, str], monster_name: str, monster_description: str) -> str:
         """Generate a creative description of how the item relates to the monster.
 
         Args:
             item: Either a DropResult enum (for regular drops) or a string (for unlock items like "a shield")
             monster_name: Name of the monster
-            monster_type: Type of the monster
-            monster_description: Base description of the monster
+            monster_description: Base description of the monster (contains enough context for LLM to infer monster nature)
 
         Returns:
             A creative description of how the item appears in relation to the monster.
             Empty string if item is NO_ITEM or invalid.
         """
         # Stub implementation - in production, this would call an LLM with context
-        # The LLM will receive: monster_name, monster_type, monster_description, and item
+        # The LLM will receive: monster_name, monster_description, and item
         # and generate creative prose about how the item appears in relation to the monster
+        # The description is rich enough (e.g., "chill mist", "loose bones") for the LLM to infer the monster's nature
         # e.g., A goblin may brandish the player's holy shield at the player
         # e.g., "Your sword rests on the cold stone below, untouched—the wraith clearly slew the bandit who carried it without caring for earthly spoils"
 
@@ -62,7 +62,7 @@ class StoryTellerProtocol(Protocol):
     # OO rationale: Behavioral contract for narrative providers. Allows the
     # game loop to depend on an interface instead of a concrete type.
     def get_current_description(self, context: str) -> str: ...
-    def describe_item_in_context(self, item: Union[DropResult, str], monster_name: str, monster_type: str, monster_description: str) -> str: ...
+    def describe_item_in_context(self, item: Union[DropResult, str], monster_name: str, monster_description: str) -> str: ...
 
 class RandomProvider(Protocol):
     # OO rationale: Small RNG abstraction to make probabilistic systems
@@ -109,39 +109,23 @@ class MonsterGenerator:
             # Regular foes
             {
                 "name": "Skeleton",
-                "type": "Undead",
                 "weaknesses": [Weakness.HOLY_SMITE, Weakness.SHIELD_BASH],
                 "description": "A humanoid frame of loose bones held by brittle bindings; light, rattling steps and hollow gaze.",
             },
             {
-                "name": "Goblin",
-                "type": "Greenskin",
+                "name": "Goblin Bandit",
                 "weaknesses": [Weakness.SWORD_SLASH, Weakness.SHIELD_BASH],
                 "description": "A small, agile greenskin with oversized ears and quick hands; favors scavenged gear and sudden lunges.",
             },
             {
-                "name": "Cultist",
-                "type": "Humanoid",
-                "weaknesses": [Weakness.HOLY_SMITE, Weakness.SWORD_SLASH],
-                "description": "A robed devotee marked with forbidden symbols; ritual trappings and a fervent, unblinking focus.",
-            },
-            {
                 "name": "Giant Rat",
-                "type": "Beast",
                 "weaknesses": [Weakness.SWORD_SLASH],
                 "description": "An oversized rat with patchy fur and prominent incisors; jittery, low to the ground, always testing distance.",
             },
             {
                 "name": "Wraith",
-                "type": "Spirit",
                 "weaknesses": [Weakness.HOLY_SMITE],
                 "description": "A dim, humanoid outline woven from chill mist; light fades and warmth thins in its presence.",
-            },
-            {
-                "name": "Bandit",
-                "type": "Humanoid",
-                "weaknesses": [Weakness.SHIELD_BASH, Weakness.SWORD_SLASH],
-                "description": "A humanoid raider in mismatched leathers with improvised arms; practiced stance and watchful eyes.",
             },
         ]
 
@@ -157,7 +141,6 @@ class MonsterGenerator:
             max_health=max_health_points,
             strength=attack_strength,
             name=monster_template["name"],
-            type=monster_template["type"],
             weaknesses=list(monster_template["weaknesses"]),
             description=monster_template["description"],
             is_boss=bool(monster_template.get("is_boss", False)),
@@ -167,7 +150,6 @@ class MonsterGenerator:
         # Single end-of-run boss
         boss_template = {
             "name": "Grave Tyrant",
-            "type": "Boss",
             "weaknesses": [Weakness.HOLY_SMITE, Weakness.SWORD_SLASH],
             "description": (
                 "An armored lich-king draped in funereal banners. A corroded crown sits on a skull carved with runes; "
@@ -182,7 +164,6 @@ class MonsterGenerator:
             max_health=boss_template["hp"],
             strength=boss_template["strength"],
             name=boss_template["name"],
-            type=boss_template["type"],
             weaknesses=list(boss_template["weaknesses"]),
             description=boss_template["description"],
             is_boss=True,
@@ -344,24 +325,23 @@ class GameSystem:
         # Add unlock items to description via StoryTeller (these will be acquired after defeat)
         if "shield" in pending_unlocks:
             shield_desc = self.storyteller.describe_item_in_context(
-                "a shield", self.current_monster.name, self.current_monster.type, self.current_monster.description
+                "a shield", self.current_monster.name, self.current_monster.description
             )
             description += shield_desc
         if "sword" in pending_unlocks:
             sword_desc = self.storyteller.describe_item_in_context(
-                "a sword", self.current_monster.name, self.current_monster.type, self.current_monster.description
+                "a sword", self.current_monster.name, self.current_monster.description
             )
             description += sword_desc
         # Add regular drop items via StoryTeller
         if guaranteed_drop != DropResult.NO_ITEM:
             item_description = self.storyteller.describe_item_in_context(
-                guaranteed_drop, self.current_monster.name, self.current_monster.type, self.current_monster.description
+                guaranteed_drop, self.current_monster.name, self.current_monster.description
             )
             description += item_description
         ui.show(
             self.storyteller,
-            f"encounter: Enemy spotted: {self.current_monster.name} ({self.current_monster.type}). "
-            f"{description}",
+            f"encounter: Enemy spotted: {self.current_monster.name}. {description}",
         )
 
     def _weighted_room_choice(self) -> str:
