@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import os
 import random
 from typing import List, Optional, Tuple, Protocol, Any, Union
 
-from . import config, ui
-from .models import (
+import config
+import ui
+
+# Debug flag - set DEBUG=1 in environment to enable verbose debug output
+DEBUG = os.getenv("DEBUG", "0") == "1"
+
+def debug_print(message: str) -> None:
+    """Print debug message only if DEBUG flag is set."""
+    if DEBUG:
+        print(f"[DEBUG] {message}", flush=True)
+from models import (
     Action,
     DropResult,
     Monster,
@@ -12,51 +22,6 @@ from .models import (
     Weakness,
 )
 
-
-class StoryTeller:
-    # OO rationale: Adapter over a narrative generator. Kept as a class to allow
-    # polymorphic replacement (e.g., real LLM client). Conforms to a protocol,
-    # enabling dependency injection and test doubles.
-    """Stub that decorates structured context into lightweight prose."""
-
-    def get_current_description(self, context: str) -> str:
-        # Minimal decoration to keep it simple; swapping this out for a real LLM later should be trivial.
-        prefix = "⟢ "
-        suffix = " ⟣"
-        return f"{prefix}{context.strip()}{suffix}"
-
-    def describe_item_in_context(self, item: Union[DropResult, str], monster_name: str, monster_description: str) -> str:
-        """Generate a creative description of how the item relates to the monster.
-
-        Args:
-            item: Either a DropResult enum (for regular drops) or a string (for unlock items like "a shield")
-            monster_name: Name of the monster
-            monster_description: Base description of the monster (contains enough context for LLM to infer monster nature)
-
-        Returns:
-            A creative description of how the item appears in relation to the monster.
-            Empty string if item is NO_ITEM or invalid.
-        """
-        # Stub implementation - in production, this would call an LLM with context
-        # The LLM will receive: monster_name, monster_description, and item
-        # and generate creative prose about how the item appears in relation to the monster
-        # The description is rich enough (e.g., "chill mist", "loose bones") for the LLM to infer the monster's nature
-        # e.g., A goblin may brandish the player's holy shield at the player
-        # e.g., "Your sword rests on the cold stone below, untouched—the wraith clearly slew the bandit who carried it without caring for earthly spoils"
-
-        # Handle DropResult enum
-        if isinstance(item, DropResult):
-            if item == DropResult.NO_ITEM:
-                return ""
-            item_name = item.name.replace("_", " ").lower()
-        # Handle string (for unlock items)
-        elif isinstance(item, str):
-            item_name = item
-        else:
-            return ""
-
-        # Simple placeholder - LLM will generate more creative descriptions based on monster type
-        return f" You notice {item_name} nearby."
 
 class StoryTellerProtocol(Protocol):
     # OO rationale: Behavioral contract for narrative providers. Allows the
@@ -248,8 +213,13 @@ class GameSystem:
     # delegating specialized behavior to collaborators.
     """Main orchestrator for exploration and combat."""
 
-    def __init__(self) -> None:
-        self.storyteller: StoryTellerProtocol = StoryTeller()
+    def __init__(self, storyteller: StoryTellerProtocol) -> None:
+        """Initialize GameSystem with a StoryTeller (required).
+
+        Args:
+            storyteller: StoryTeller implementation (typically LLMStoryTeller)
+        """
+        self.storyteller: StoryTellerProtocol = storyteller
         self.random_provider: RandomProvider = DefaultRandomProvider()
         self.player = Player(
             max_health=config.PLAYER_MAX_HEALTH,
@@ -264,8 +234,22 @@ class GameSystem:
         self.game_won: bool = False
 
     def start_game(self) -> None:
-        ui.show(self.storyteller, "game:start: You step past a threshold into shadowed passages.")
+        debug_print("start_game() called")
+        opening_text = """game:start: You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
+
+Faint torchlight flickers across toppled pillars and shattered glass — the remnants of the old sanctum where you had just retrieved the **Heart of Radiance**, a sacred relic.
+
+You remember now: the attack came at dusk. A pack of goblin bandits ambushed you, stole your gear, shattered your enchanted map, and stole the **Heart of Radiance**... then left you for dead.
+
+Without the map's guiding spell, the sanctum's halls — once woven with radiant wards to conceal the relic — now twist and shift at random. Each step forward reshapes the labyrinth anew.
+
+Echoing goblin screams from the labyrinth below tell you where they fled to hide, but in doing so, they awakened creatures far worse.
+
+Weak but alive, you feel the quiet warmth of your connection to the Light. It has not abandoned you. Not yet."""
+        ui.show(self.storyteller, opening_text)
+        debug_print("Entering game loop")
         while self.player.is_alive() and not self.game_won:
+            debug_print(f"Loop iteration - monster: {self.current_monster is not None}")
             if self.current_monster is None:
                 self._safe_phase()
             else:
@@ -286,10 +270,21 @@ class GameSystem:
             menu.append(("Pray for restoration (full heal)", "pray"))
         menu.append(("Use a health potion", "potion"))
         titles = [title for title, _ in menu]
+        debug_print("About to call prompt_choice")
         idx = ui.prompt_choice(self.storyteller, "Choose your course:", titles)
+        debug_print(f"prompt_choice returned index: {idx}")
         selection = menu[idx][1]
+        debug_print(f"Selected: {selection}")
         if selection == "proceed":
-            self._proceed_to_room()
+            debug_print("Calling _proceed_to_room()")
+            try:
+                self._proceed_to_room()
+                debug_print("Returned from _proceed_to_room()")
+            except Exception as e:
+                debug_print(f"Exception in _proceed_to_room(): {e}")
+                import traceback
+                traceback.print_exc()
+                raise
         elif selection == "pray":
             self.player.pray_for_restoration()
             ui.show(self.storyteller, "rest: You pause to recover; breath steadies and wounds close.")
@@ -300,49 +295,104 @@ class GameSystem:
                 ui.show(self.storyteller, "potion: You check your supplies—no potions remain.")
 
     def _proceed_to_room(self) -> None:
+        debug_print("_proceed_to_room() called")
         room = self._weighted_room_choice()
+        debug_print(f"Room type: {room}")
         if room == "empty":
+            debug_print("Empty room")
             ui.show(self.storyteller, "room: A quiet space—no immediate threats or finds.")
             return
         if room == "loot":
+            debug_print("Loot room")
             drop = self.drop_calculator.roll_item_drop()
             self._apply_loot(drop)
             return
         # Monster room
+        debug_print("Monster room - generating monster")
         # Roll the drop now so we can describe it in the encounter
         guaranteed_drop = self.drop_calculator.roll_item_drop()
+        debug_print(f"Guaranteed drop: {guaranteed_drop}")
         # Check what unlocks are pending before generating the monster
         pending_unlocks = self.progression.get_pending_unlocks(self.defeated_monsters_count, self.player)
+        debug_print(f"Pending unlocks: {pending_unlocks}")
         # Small chance to encounter the boss after some progress
         if self.defeated_monsters_count >= config.BOSS_SPAWN_THRESHOLD and self.random_provider.random() < config.BOSS_SPAWN_CHANCE:
+            debug_print("Generating boss")
             self.current_monster = self.monster_generator.generate_boss()
         else:
+            debug_print("Generating regular monster")
             self.current_monster = self.monster_generator.generate_monster()
+        debug_print(f"Monster generated: {self.current_monster.name}")
         # Store the guaranteed drop on the monster
         self.current_monster.guaranteed_drop = guaranteed_drop
         # Generate description with item context
         description = self.current_monster.description
         # Add unlock items to description via StoryTeller (these will be acquired after defeat)
         if "shield" in pending_unlocks:
-            shield_desc = self.storyteller.describe_item_in_context(
-                "a shield", self.current_monster.name, self.current_monster.description
-            )
-            description += shield_desc
+            debug_print("Generating shield description...")
+            if not DEBUG:
+                print("Generating description...", end="", flush=True)
+            try:
+                shield_desc = self.storyteller.describe_item_in_context(
+                    "a shield", self.current_monster.name, self.current_monster.description
+                )
+                if not DEBUG:
+                    print("\r" + " " * 30 + "\r", end="", flush=True)  # Clear the loading message
+                debug_print(f"Shield description generated: {shield_desc[:50]}...")
+                description += shield_desc
+            except Exception as e:
+                if not DEBUG:
+                    print()  # New line after loading message
+                print(f"Error generating description: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                description += " You notice a shield nearby."
         if "sword" in pending_unlocks:
-            sword_desc = self.storyteller.describe_item_in_context(
-                "a sword", self.current_monster.name, self.current_monster.description
-            )
-            description += sword_desc
+            debug_print("Generating sword description...")
+            if not DEBUG:
+                print("Generating description...", end="", flush=True)
+            try:
+                sword_desc = self.storyteller.describe_item_in_context(
+                    "a sword", self.current_monster.name, self.current_monster.description
+                )
+                if not DEBUG:
+                    print("\r" + " " * 30 + "\r", end="", flush=True)  # Clear the loading message
+                debug_print(f"Sword description generated: {sword_desc[:50]}...")
+                description += sword_desc
+            except Exception as e:
+                if not DEBUG:
+                    print()  # New line after loading message
+                print(f"Error generating description: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                description += " You notice a sword nearby."
         # Add regular drop items via StoryTeller
         if guaranteed_drop != DropResult.NO_ITEM:
-            item_description = self.storyteller.describe_item_in_context(
-                guaranteed_drop, self.current_monster.name, self.current_monster.description
-            )
-            description += item_description
+            debug_print(f"Generating drop description for: {guaranteed_drop}")
+            if not DEBUG:
+                print("Generating description...", end="", flush=True)
+            try:
+                item_description = self.storyteller.describe_item_in_context(
+                    guaranteed_drop, self.current_monster.name, self.current_monster.description
+                )
+                if not DEBUG:
+                    print("\r" + " " * 30 + "\r", end="", flush=True)  # Clear the loading message
+                debug_print(f"Drop description generated: {item_description[:50]}...")
+                description += item_description
+            except Exception as e:
+                if not DEBUG:
+                    print()  # New line after loading message
+                print(f"Error generating description: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                item_name = guaranteed_drop.name.replace("_", " ").lower()
+                description += f" You notice {item_name} nearby."
+        debug_print("Showing encounter message")
         ui.show(
             self.storyteller,
             f"encounter: Enemy spotted: {self.current_monster.name}. {description}",
         )
+        debug_print("Encounter message shown, returning")
 
     def _weighted_room_choice(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS

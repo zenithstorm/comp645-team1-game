@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import List, Set, Callable, Dict, Optional
 
-from . import config
+import config
 
 
 class Action(Enum):
