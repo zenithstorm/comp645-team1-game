@@ -12,8 +12,6 @@ class Action(Enum):
     # OO rationale: Domain vocabulary for player intents. Using an Enum fixes the set
     # of valid actions at compile-time, enabling explicit branching and avoiding
     # stringly-typed conditionals throughout the system.
-    PROCEED = auto()
-    PRAY = auto()
     USE_POTION = auto()
     FLEE = auto()
     SWORD_SLASH = auto()
@@ -103,13 +101,6 @@ class Inventory:
             self.num_escape_scrolls -= amount
             return True
         return False
-    
-    # Intent helpers for readability
-    def has_potion(self) -> bool:
-        return self.num_potions > 0
-
-    def has_escape_scroll(self) -> bool:
-        return self.num_escape_scrolls > 0
 
 
 @dataclass
@@ -118,19 +109,17 @@ class Player(Actor):
     # capabilities (abilities map). Keeps responsibility cohesive: defense,
     # healing, fleeing, and equipping armor are player-specific concerns.
     base_defense: int = config.PLAYER_BASE_DEFENSE
-    armor_defense_bonus: int = 0
     inventory: Inventory = field(default_factory=Inventory)
     owned_armor: Set[DropResult] = field(default_factory=set)
     has_shield: bool = False  # unlocks after first monster fight
     has_sword: bool = False   # unlocks after third monster fight
 
     def get_defense(self) -> int:
-        return self.base_defense + self.armor_defense_bonus
+        return self.base_defense + len(self.owned_armor) * config.ARMOR_DEFENSE_BONUS_PER_PIECE
 
     def add_armor_piece(self, armor_piece: DropResult) -> None:
         if armor_piece in DropResult.armor_pieces() and armor_piece not in self.owned_armor:
             self.owned_armor.add(armor_piece)
-            self.armor_defense_bonus += config.ARMOR_DEFENSE_BONUS_PER_PIECE
 
     def use_potion(self) -> bool:
         if self.inventory.remove_potion():

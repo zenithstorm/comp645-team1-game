@@ -306,7 +306,7 @@ class GameSystem:
             return
         if room == "loot":
             drop = self.drop_calculator.roll_item_drop()
-            self._apply_loot(drop, source="room")
+            self._apply_loot(drop)
             return
         # Monster room
         # Roll the drop now so we can describe it in the encounter
@@ -365,7 +365,7 @@ class GameSystem:
                 else:
                     ui.show(self.storyteller, "potion: No potions available.")
             elif chosen == Action.FLEE:
-                success = self.player.attempt_flee(self.rng.random)
+                success = self.player.attempt_flee(self.random_provider.random)
                 if success:
                     ui.show(self.storyteller, "flee: You disengage and escape.")
                     self.current_monster = None
@@ -408,8 +408,6 @@ class GameSystem:
             Action.SHIELD_BASH: "Shield Bash",
             Action.USE_POTION: "Use Potion",
             Action.FLEE: "Flee",
-            Action.PROCEED: "Proceed",
-            Action.PRAY: "Pray",
         }
         return action_labels[action]
 
@@ -433,13 +431,13 @@ class GameSystem:
             ui.show(self.storyteller, message)
         # Use the guaranteed drop that was determined when the monster was encountered
         if monster.guaranteed_drop is not None:
-            self._apply_loot(monster.guaranteed_drop, source="battle")
+            self._apply_loot(monster.guaranteed_drop)
         else:
             # Fallback: roll if somehow drop wasn't set (shouldn't happen)
             drop = self.drop_calculator.roll_item_drop()
-            self._apply_loot(drop, source="battle")
+            self._apply_loot(drop)
 
-    def _apply_loot(self, drop: DropResult, source: str) -> None:
+    def _apply_loot(self, drop: DropResult) -> None:
         if drop == DropResult.NO_ITEM:
             ui.show(self.storyteller, "loot: No notable items found.")
             return
