@@ -121,58 +121,6 @@ class LLMStoryTeller:
                 "content": f"{event_type}: {description}"
             })
 
-    def describe_player_action(
-        self,
-        action: str,
-        monster_name: str,
-        monster_description: str,
-        damage: int,
-        player: Player,
-        is_weakness: bool = False
-    ) -> str:
-        """Generate narrative description of a player's combat action.
-
-        Args:
-            action: The action name (e.g., "Holy Smite", "Shield Bash", "Sword Slash")
-            monster_name: Name of the monster
-            monster_description: Description of the monster
-            damage: Damage dealt
-            player: The player object
-            is_weakness: Whether this was a weakness hit
-        """
-        player_context = self._get_player_context(player)
-        weakness_text = " The creature is particularly vulnerable to this attack!" if is_weakness else ""
-
-        prompt = f"""A holy knight/paladin is in combat with:
-- Monster: {monster_name}
-- Description: {monster_description}
-
-{player_context}
-
-The player uses: {action}
-Damage dealt: {damage}{weakness_text}
-
-Write a vivid 1-3 sentence description of how this action unfolds. Describe the holy knight's movements, the divine power or weapon, and the impact on the monster. Be cinematic and immersive, like a dungeon master narrating combat.
-
-IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing that might be worn under armor, not armor.
-
-Examples:
-- For Holy Smite (no equipment): "You raise your hand, calling upon the Light, and divine radiance blazes forth, striking the creature with searing holy energy. The monster recoils as the sacred power burns through its form."
-- For Shield Bash (has shield): "You surge forward, your shield leading the charge. The heavy impact sends the creature staggering backward, its balance broken by the weight of your righteous defense."
-- For Sword Slash (has sword): "Your blade arcs through the air, catching the torchlight. The steel finds its mark, cutting deep as you channel your strength into the strike."
-
-Write only the description, no quotes or labels:"""
-
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=250)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Player action ({action}): {description}"
-        })
-        return description
-
     def describe_combat_turn(
         self,
         action: str,
@@ -237,55 +185,6 @@ Write only the description, no quotes or labels:"""
         self.conversation_history.append({
             "role": "assistant",
             "content": f"Combat turn ({action}): {description}"
-        })
-        return description
-
-    def describe_monster_attack(
-        self,
-        monster_name: str,
-        monster_description: str,
-        damage: int,
-        player_health_after: int,
-        has_shield: bool = False,
-        has_sword: bool = False,
-        has_armor: bool = False
-    ) -> str:
-        """Generate narrative description of a monster's attack.
-
-        Args:
-            monster_name: Name of the monster
-            monster_description: Description of the monster
-            damage: Damage dealt
-            player_health_after: Player's health after the attack
-            has_shield: Whether the player has a shield
-            has_sword: Whether the player has a sword
-            has_armor: Whether the player has any armor pieces
-        """
-        player_context = self._get_player_context(has_shield, has_sword, has_armor)
-        prompt = f"""A holy knight/paladin is being attacked by:
-- Monster: {monster_name}
-- Description: {monster_description}
-- Damage dealt: {damage}
-- Player's remaining health: {player_health_after}
-
-{player_context}
-
-Write a vivid 1-3 sentence description of the monster's attack. Describe how the creature strikes, the knight's reaction, and the impact. Be cinematic and immersive, like a dungeon master narrating combat.
-
-IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing that might be worn under armor, not armor. If they don't have a shield, they can't raise a shield to block.
-
-Example style (no armor, no shield):
-"The creature lunges forward with surprising speed, claws raking across your clothing. You try to dodge, but the force of the blow still finds its way through, leaving you winded and bleeding."
-
-Write only the description, no quotes or labels:"""
-
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=250)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Monster attack: {description}"
         })
         return description
 
@@ -690,50 +589,3 @@ Write only the description, no quotes or labels:"""
             "content": f"Encounter with {monster_name}: {description}"
         })
         return description
-
-    def describe_item_in_context(
-        self,
-        item: Union[DropResult, str],
-        monster_name: str,
-        monster_description: str
-    ) -> str:
-        """Generate creative description using OpenAI."""
-        # Extract item name
-        if isinstance(item, DropResult):
-            if item == DropResult.NO_ITEM:
-                return ""
-            item_name = item.name.replace("_", " ").lower()
-        elif isinstance(item, str):
-            item_name = item
-        else:
-            return ""
-
-        # Build prompt for LLM - include conversation history for context
-        prompt = f"""A player encounters a monster:
-- Name: {monster_name}
-- Description: {monster_description}
-
-The monster will drop: {item_name}
-
-Write a single, creative sentence (15-30 words) describing how this item appears in relation to the monster.
-The item is the player's stolen gear (fit for a holy knight), not crude or battered equipment. Consider the monster's nature from its description. Be atmospheric and immersive.
-
-Examples:
-- For a wraith with a health potion: "A glass vial glints on the cold stone, left behind by a previous victim."
-- For a goblin with a shield: "The goblin brandishes your shield, its holy symbols still visible despite the grime."
-- For a skeleton with armor: "Your armor pieces lie scattered among the bones, the goblins having discarded what they couldn't carry."
-
-Write only the sentence, no quotes or extra text:"""
-
-        # Build messages with conversation history for context
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=150)
-        # Add the response to conversation history
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Item description for {item_name}: {description}"
-        })
-        # Ensure it starts with a space if not empty
-        return f" {description}" if description else ""
