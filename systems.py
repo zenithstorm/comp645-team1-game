@@ -297,11 +297,11 @@ class GameSystem:
             print("\r" + " " * 30 + "\r", end="", flush=True)
             if event_type:
                 self.storyteller.track_event(event_type, narrative_text)
-            ui.show(self.storyteller, narrative_text)
+            print(narrative_text, flush=True)
         except Exception as e:
             print()
             print(f"Error generating description: {e}", flush=True)
-            ui.show(self.storyteller, fallback_text)
+            print(fallback_text, flush=True)
 
     def _format_item_name(self, item: DropResult) -> str:
         """Format a DropResult item name for narrative display.
@@ -344,7 +344,7 @@ Echoing goblin screams from the labyrinth below tell you where they fled to hide
 
 Weak but alive, you feel the quiet warmth of your connection to the Light. It has not abandoned you. Not yet."""
         self.storyteller.track_event("game_start", opening_text)
-        ui.show(self.storyteller, opening_text)
+        print(opening_text, flush=True)
         while self.player.is_alive() and not self.game_won:
             if self.current_monster is None:
                 self._exploration_phase()
@@ -353,23 +353,23 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         if self.game_won:
             victory_text = "The last foe falls; somewhere, an exit reveals itself."
             self.storyteller.track_event("game_victory", victory_text)
-            ui.show(self.storyteller, victory_text)
+            print(victory_text, flush=True)
         else:
             game_over_text = "Your journey ends here; the dark grows still."
             self.storyteller.track_event("game_over", game_over_text)
-            ui.show(self.storyteller, game_over_text)
+            print(game_over_text, flush=True)
 
     # =====================
     # Safe / Pre-combat
     # =====================
     def _exploration_phase(self) -> None:
         status_display = self._get_status_display()
-        ui.show(self.storyteller, status_display)
+        print(status_display, flush=True)
         action_menu: List[Tuple[str, str]] = [("Proceed onward", "proceed")]
         if self.player.health < self.player.max_health:
             action_menu.append(("Pray for restoration (full heal)", "pray"))
         option_labels = [label for label, _ in action_menu]
-        selected_index = ui.prompt_choice(self.storyteller, "Choose your course:", option_labels)
+        selected_index = ui.prompt_choice("Choose your course:", option_labels)
         action_choice = action_menu[selected_index][1]
         if action_choice == "proceed":
             self._explore_room()
@@ -415,10 +415,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             try:
                 description = get_loot_description()
                 self.storyteller.track_event("loot", description)
-                ui.show(self.storyteller, description)
+                print(description, flush=True)
             except Exception as e:
                 print(f"Error generating description: {e}", flush=True)
-                ui.show(self.storyteller, fallback)
+                print(fallback, flush=True)
             # Apply the loot after showing the description
             self._apply_loot(drop)
             return
@@ -457,7 +457,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         while self.player.is_alive() and self.current_monster.is_alive():
             available_actions = self._get_available_combat_actions()
             action_labels = [self._get_action_label(action) for action in available_actions]
-            selected_index = ui.prompt_choice(self.storyteller, "In battle, choose your action:", action_labels)
+            selected_index = ui.prompt_choice("In battle, choose your action:", action_labels)
             selected_action = available_actions[selected_index]
             if selected_action == Action.USE_POTION:
                 if self.player.use_potion():
@@ -468,7 +468,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                     )
                 else:
                     description = self.storyteller.describe_potion_use(self.player)
-                    ui.show(self.storyteller, description)
+                    print(description, flush=True)
             elif selected_action == Action.FLEE:
                 flee_succeeded = self.player.attempt_flee(self.random_provider.random)
                 self._generate_narrative(
@@ -612,11 +612,11 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         # Handle unique gear unlocks
         if drop == DropResult.SHIELD:
             self.player.has_shield = True
-            ui.show(self.storyteller, "Shield Bash unlocked")
+            print("Shield Bash unlocked", flush=True)
             return
         if drop == DropResult.SWORD:
             self.player.has_sword = True
-            ui.show(self.storyteller, "Sword Slash unlocked")
+            print("Sword Slash unlocked", flush=True)
             return
 
         # Handle armor pieces

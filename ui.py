@@ -3,17 +3,12 @@ from __future__ import annotations
 from typing import List
 
 
-def show(storyteller, text: str) -> None:
-    """Display text to the user."""
-    print(text, flush=True)
-
-
-def prompt_choice(storyteller, title: str, options: List[str]) -> int:
+def prompt_choice(title: str, options: List[str]) -> int:
     """Prompt user to choose from numbered options; returns zero-based index."""
     import sys
 
     lines = [title] + [f"{idx + 1}) {opt}" for idx, opt in enumerate(options)]
-    show(storyteller, "\n".join(lines))
+    print("\n".join(lines), flush=True)
     while True:
         sys.stdout.write("> ")
         sys.stdout.flush()
@@ -35,4 +30,4 @@ def prompt_choice(storyteller, title: str, options: List[str]) -> int:
             if 1 <= choice_number <= len(options):
                 selected_index = choice_number - 1
                 return selected_index
-        show(storyteller, "Invalid input. Please enter a valid number.")
+        print("Invalid input. Please enter a valid number.", flush=True)

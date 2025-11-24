@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 # Player and combat values
-PLAYER_MAX_HEALTH: int = 30
+PLAYER_MAX_HEALTH: int = 20
 PLAYER_BASE_STRENGTH: int = 5
 PLAYER_BASE_DEFENSE: int = 1
 
