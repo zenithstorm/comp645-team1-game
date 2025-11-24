@@ -35,21 +35,58 @@ class DefaultRandomProvider:
     def choice(self, seq: List[Any]) -> Any:
         return random.choice(seq)
 
-def pick_weighted(buckets: List[Tuple[str, float]], random_provider: RandomProvider) -> str:
-    # OO rationale: Centralized, pure utility that implements weighted selection.
-    # - Single-responsibility: callers (loot, rooms) don't duplicate probability logic.
-    # - Dependency inversion: consumes RandomProvider to remain deterministic in tests.
-    # - Decoupling: returns a label, letting each subsystem map labels to domain types.
-    total_weight = sum(weight for _, weight in buckets)
+def select_weighted_random(options: List[Tuple[str, float]], random_provider: RandomProvider) -> str:
+    """Select a random option from weighted choices using probability distribution.
+
+    This function implements weighted random selection, where each option has a
+    probability of being selected proportional to its weight. Higher weights
+    mean higher probability of selection.
+
+    Algorithm:
+    1. Calculate total weight of all options
+    2. Generate a random number between 0 and total_weight
+    3. Iterate through options, accumulating weights until the random number
+       falls within an option's range
+    4. Return the label of the selected option
+
+    Example:
+        options = [
+            ("common", 10.0),   # 10/15 = 66.7% chance
+            ("rare", 4.0),      # 4/15 = 26.7% chance
+            ("epic", 1.0)       # 1/15 = 6.7% chance
+        ]
+        # Total weight = 15.0
+        # Random number between 0-15 determines which option is selected
+
+    Args:
+        options: List of (option_label, weight) tuples. Weight must be >= 0.
+        random_provider: Random number generator (for testability).
+
+    Returns:
+        The label string of the selected option. If total_weight <= 0, returns
+        the last option's label as a fallback.
+
+    OO rationale: Centralized, pure utility that implements weighted selection.
+    - Single-responsibility: callers (loot, rooms) don't duplicate probability logic.
+    - Dependency inversion: consumes RandomProvider to remain deterministic in tests.
+    - Decoupling: returns a label, letting each subsystem map labels to domain types.
+    """
+    total_weight = sum(weight for _, weight in options)
     if total_weight <= 0:
-        return buckets[-1][0]
-    random_threshold = random_provider.random() * total_weight
-    running_total = 0.0
-    for label, weight in buckets:
-        running_total += weight
-        if random_threshold <= running_total:
-            return label
-    return buckets[-1][0]
+        return options[-1][0]
+
+    # Generate random number in range [0, total_weight)
+    random_value = random_provider.random() * total_weight
+
+    # Walk through options, accumulating weights until random_value falls within an option's range
+    cumulative_weight = 0.0
+    for option_label, weight in options:
+        cumulative_weight += weight
+        if random_value <= cumulative_weight:
+            return option_label
+
+    # Fallback (shouldn't normally reach here due to floating point precision)
+    return options[-1][0]
 
 class MonsterGenerator:
     # OO rationale: Factory responsible for building fully-formed Monster
@@ -188,7 +225,7 @@ class DropCalculator:
             ("ESCAPE_SCROLL", weight_escape_scroll),
             ("ARMOR", weight_armor),
         ]
-        chosen_bucket = pick_weighted(buckets, self.random_provider)
+        chosen_bucket = select_weighted_random(buckets, self.random_provider)
 
         # Map bucket names to DropResult values
         bucket_to_drop = {
@@ -410,7 +447,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
     def _weighted_room_choice(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS
         buckets = [(room_name, room_weight) for room_name, room_weight in room_type_weights.items()]
-        return pick_weighted(buckets, self.random_provider)
+        return select_weighted_random(buckets, self.random_provider)
 
     # =====================
     # Combat
