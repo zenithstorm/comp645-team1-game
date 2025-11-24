@@ -142,11 +142,13 @@ class MonsterGenerator:
         # Single end-of-run boss
         boss_template = {
             "name": "Grave Tyrant",
-            "weaknesses": [Weakness.HOLY_SMITE, Weakness.SWORD_SLASH],
+            "weaknesses": [],
             "description": (
                 "An armored lich-king draped in funereal banners. A corroded crown sits on a skull carved with runes; "
                 "a great blade of black iron rests across its lap. Plates of ornate mail are missing in places, "
-                "revealing ribs choked with grave dust."
+                "revealing ribs choked with grave dust. Clutched in its skeletal grasp, the Heart of Radiance pulses "
+                "with a faint, struggling light—the sacred relic you came to reclaim, its divine radiance dimmed but "
+                "not extinguished by the creature's dark presence."
             ),
             "hp": config.BOSS_HP,
             "strength": config.BOSS_STRENGTH,
