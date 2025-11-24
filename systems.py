@@ -275,29 +275,29 @@ class GameSystem:
         self.current_monster: Optional[Monster] = None
         self.drop_calculator = DropCalculator(self.random_provider)
         self.monster_generator = MonsterGenerator(self.random_provider)
-        self.defeated_monsters_count: int = 0
+        self.monsters_defeated: int = 0
         self.game_won: bool = False
 
-    def _call_storyteller_with_loading(
+    def _generate_narrative(
         self,
-        storyteller_callable: Callable[[], str],
+        narrative_generator: Callable[[], str],
         event_type: Optional[str],
         fallback_text: str
     ) -> None:
-        """Helper to call storyteller methods with loading message and error handling.
+        """Generate narrative text with loading indicator and error handling.
 
         Args:
-            storyteller_callable: A callable that returns the description string
+            narrative_generator: A callable that returns the narrative description string
             event_type: Type of event to track (e.g., "encounter", "victory", "loot") or None to skip tracking
             fallback_text: Fallback text if the LLM call fails
         """
         print("Story Teller is thinking...", end="", flush=True)
         try:
-            description = storyteller_callable()
+            narrative_text = narrative_generator()
             print("\r" + " " * 30 + "\r", end="", flush=True)
             if event_type:
-                self.storyteller.track_event(event_type, description)
-            ui.show(self.storyteller, description)
+                self.storyteller.track_event(event_type, narrative_text)
+            ui.show(self.storyteller, narrative_text)
         except Exception as e:
             print()
             print(f"Error generating description: {e}", flush=True)
@@ -318,14 +318,14 @@ class GameSystem:
             return "a sword"
         return item.name.replace("_", " ").lower()
 
-    def _collect_items_acquired(self, monster: Monster) -> List[str]:
-        """Collect all items that will be acquired after defeating a monster.
+    def _get_item_names_from_monster(self, monster: Monster) -> List[str]:
+        """Get formatted item names that will be acquired after defeating a monster.
 
         Args:
             monster: The monster being defeated
 
         Returns:
-            List of item names (e.g., ["a shield", "health potion"])
+            List of formatted item names (e.g., ["a shield", "health potion"])
         """
         if monster.item_drop is None or monster.item_drop == DropResult.NO_ITEM:
             return []
@@ -347,7 +347,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         ui.show(self.storyteller, opening_text)
         while self.player.is_alive() and not self.game_won:
             if self.current_monster is None:
-                self._safe_phase()
+                self._exploration_phase()
             else:
                 self._combat_phase()
         if self.game_won:
@@ -362,43 +362,43 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
     # =====================
     # Safe / Pre-combat
     # =====================
-    def _safe_phase(self) -> None:
-        status = self._status_text()
-        ui.show(self.storyteller, status)
-        menu: List[Tuple[str, str]] = [("Proceed onward", "proceed")]
+    def _exploration_phase(self) -> None:
+        status_display = self._get_status_display()
+        ui.show(self.storyteller, status_display)
+        action_menu: List[Tuple[str, str]] = [("Proceed onward", "proceed")]
         if self.player.health < self.player.max_health:
-            menu.append(("Pray for restoration (full heal)", "pray"))
-        titles = [title for title, _ in menu]
-        idx = ui.prompt_choice(self.storyteller, "Choose your course:", titles)
-        selection = menu[idx][1]
-        if selection == "proceed":
-            self._proceed_to_room()
-        elif selection == "pray":
-            self._call_storyteller_with_loading(
+            action_menu.append(("Pray for restoration (full heal)", "pray"))
+        option_labels = [label for label, _ in action_menu]
+        selected_index = ui.prompt_choice(self.storyteller, "Choose your course:", option_labels)
+        action_choice = action_menu[selected_index][1]
+        if action_choice == "proceed":
+            self._explore_room()
+        elif action_choice == "pray":
+            self._generate_narrative(
                 lambda: self.storyteller.describe_pray(self.player),
                 None,  # Don't track prayer as a significant event
                 "You pause to recover; breath steadies and wounds close."
             )
             self.player.pray_for_restoration()
-        elif selection == "potion":
-            self._call_storyteller_with_loading(
+        elif action_choice == "potion":
+            self._generate_narrative(
                 lambda: self.storyteller.describe_potion_use(self.player),
                 None,  # Don't track potion use as a significant event
                 "You use a potion and restore full health."
             )
         else:
-            raise ValueError(f"Invalid selection: {selection}")
+            raise ValueError(f"Invalid selection: {action_choice}")
 
-    def _proceed_to_room(self) -> None:
-        room = self._weighted_room_choice()
-        if room == "empty":
-            self._call_storyteller_with_loading(
+    def _explore_room(self) -> None:
+        room_type = self._select_random_room_type()
+        if room_type == "empty":
+            self._generate_narrative(
                 lambda: self.storyteller.describe_empty_room(),
                 None,  # Don't track empty rooms as significant events
                 "A quiet space—no immediate threats or finds."
             )
             return
-        if room == "loot":
+        if room_type == "loot":
             drop = self.drop_calculator.roll_item_drop()
             # Generate narrative description of finding the loot
             def get_loot_description():
@@ -424,16 +424,16 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             return
         # Monster room
         # Get the drop for this monster
-        drop = self.drop_calculator.get_drop_for_monster(self.defeated_monsters_count, self.player)
+        drop = self.drop_calculator.get_drop_for_monster(self.monsters_defeated, self.player)
         # Small chance to encounter the boss after some progress
-        if self.defeated_monsters_count >= config.BOSS_SPAWN_THRESHOLD and self.random_provider.random() < config.BOSS_SPAWN_CHANCE:
+        if self.monsters_defeated >= config.BOSS_SPAWN_THRESHOLD and self.random_provider.random() < config.BOSS_SPAWN_CHANCE:
             self.current_monster = self.monster_generator.generate_boss()
         else:
             self.current_monster = self.monster_generator.generate_monster()
         # Store the drop on the monster
         self.current_monster.item_drop = drop
         # Generate full narrative encounter description from LLM
-        self._call_storyteller_with_loading(
+        self._generate_narrative(
             lambda: self.storyteller.describe_encounter(
                 self.current_monster.name,
                 self.current_monster.description,
@@ -444,10 +444,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             f"You encounter {self.current_monster.name}. {self.current_monster.description}"
         )
 
-    def _weighted_room_choice(self) -> str:
+    def _select_random_room_type(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS
-        buckets = [(room_name, room_weight) for room_name, room_weight in room_type_weights.items()]
-        return select_weighted_random(buckets, self.random_provider)
+        room_options = [(room_name, room_weight) for room_name, room_weight in room_type_weights.items()]
+        return select_weighted_random(room_options, self.random_provider)
 
     # =====================
     # Combat
@@ -455,13 +455,13 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
     def _combat_phase(self) -> None:
         assert self.current_monster is not None
         while self.player.is_alive() and self.current_monster.is_alive():
-            combat_options = self._combat_options()
-            option_titles = [self._action_label(action) for action in combat_options]
-            selected_index = ui.prompt_choice(self.storyteller, "In battle, choose your action:", option_titles)
-            chosen = combat_options[selected_index]
-            if chosen == Action.USE_POTION:
+            available_actions = self._get_available_combat_actions()
+            action_labels = [self._get_action_label(action) for action in available_actions]
+            selected_index = ui.prompt_choice(self.storyteller, "In battle, choose your action:", action_labels)
+            selected_action = available_actions[selected_index]
+            if selected_action == Action.USE_POTION:
                 if self.player.use_potion():
-                    self._call_storyteller_with_loading(
+                    self._generate_narrative(
                         lambda: self.storyteller.describe_potion_use(self.player),
                         None,  # Don't track potion use as a significant event
                         "You use a potion and restore full health."
@@ -469,63 +469,63 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 else:
                     description = self.storyteller.describe_potion_use(self.player)
                     ui.show(self.storyteller, description)
-            elif chosen == Action.FLEE:
-                success = self.player.attempt_flee(self.random_provider.random)
-                self._call_storyteller_with_loading(
-                    lambda: self.storyteller.describe_flee(success, self.current_monster.name),
+            elif selected_action == Action.FLEE:
+                flee_succeeded = self.player.attempt_flee(self.random_provider.random)
+                self._generate_narrative(
+                    lambda: self.storyteller.describe_flee(flee_succeeded, self.current_monster.name),
                     "flee",
-                    "You disengage and escape." if success else "You fail to break away."
+                    "You disengage and escape." if flee_succeeded else "You fail to break away."
                 )
-                if success:
+                if flee_succeeded:
                     self.current_monster = None
                     return
             else:
                 # Combat action (Holy Smite, Shield Bash, Sword Slash)
                 ability_map = self.player.abilities()
-                base_damage = ability_map[chosen]()
-                damage_amount = self._calculate_player_damage(chosen, self.current_monster)
+                base_damage = ability_map[selected_action]()
+                final_damage = self._calculate_player_damage(selected_action, self.current_monster)
                 # Check if it's a weakness hit
-                weakness_for_action = self.ACTION_TO_WEAKNESS.get(chosen)
-                is_weakness = (weakness_for_action is not None and
-                              weakness_for_action in self.current_monster.weaknesses and
-                              damage_amount > base_damage)
+                matching_weakness = self.ACTION_TO_WEAKNESS.get(selected_action)
+                is_weakness = (matching_weakness is not None and
+                              matching_weakness in self.current_monster.weaknesses and
+                              final_damage > base_damage)
                 # Apply player damage
-                damage_taken = self.current_monster.take_damage(damage_amount)
+                damage_dealt = self.current_monster.take_damage(final_damage)
                 monster_died = not self.current_monster.is_alive()
 
                 # Handle monster retaliation if it survived
                 monster_retaliation_damage = None
                 player_health_after = None
                 if not monster_died:
-                    incoming = self.current_monster.attack()
-                    monster_retaliation_damage = self.player.take_damage(incoming, defense=self.player.get_defense())
+                    monster_attack_damage = self.current_monster.attack()
+                    monster_retaliation_damage = self.player.take_damage(monster_attack_damage, defense=self.player.get_defense())
                     player_health_after = self.player.health
 
                 # Generate single narrative for the complete combat turn
                 if monster_died:
                     # If monster died, let victory handle the narrative (includes the killing blow)
-                    self.defeated_monsters_count += 1
-                    self._post_fight_rewards(self.current_monster, chosen, is_weakness)
+                    self.monsters_defeated += 1
+                    self._handle_monster_defeat(self.current_monster, selected_action, is_weakness)
                     self.current_monster = None
                     return
                 else:
                     # Monster survived - describe the complete turn (player action + monster retaliation)
-                    self._call_storyteller_with_loading(
+                    self._generate_narrative(
                         lambda: self.storyteller.describe_combat_turn(
-                            self._action_label(chosen),
+                            self._get_action_label(selected_action),
                             self.current_monster.name,
                             self.current_monster.description,
-                            damage_taken,
+                            damage_dealt,
                             is_weakness,
                             self.player,
                             monster_retaliation_damage=monster_retaliation_damage,
                             player_health_after=player_health_after
                         ),
                         "combat",
-                        f"Your {self._action_label(chosen).lower()} strikes for {damage_taken} damage. The enemy attacks for {monster_retaliation_damage} damage."
+                        f"Your {self._get_action_label(selected_action).lower()} strikes for {damage_dealt} damage. The enemy attacks for {monster_retaliation_damage} damage."
                     )
 
-    def _combat_options(self) -> List[Action]:
+    def _get_available_combat_actions(self) -> List[Action]:
         options: List[Action] = list(self.player.abilities().keys())
         # Only show potion option if player is injured AND has potions
         if self.player.health < self.player.max_health and self.player.inventory.num_potions > 0:
@@ -533,7 +533,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         options.append(Action.FLEE)
         return options
 
-    def _action_label(self, action: Action) -> str:
+    def _get_action_label(self, action: Action) -> str:
         action_labels = {
             Action.HOLY_SMITE: "Holy Smite",
             Action.SWORD_SLASH: "Sword Slash",
@@ -551,24 +551,24 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         base = dmg_fn()
         return monster.apply_weakness_bonus(action, base)
 
-    def _post_fight_rewards(self, monster: Monster, final_action: Optional[Action] = None, is_weakness: bool = False) -> None:
-        """Handle post-fight rewards and victory narration.
+    def _handle_monster_defeat(self, monster: Monster, final_action: Optional[Action] = None, is_weakness: bool = False) -> None:
+        """Handle monster defeat: victory narration and loot rewards.
 
         Args:
             monster: The defeated monster
             final_action: The action that killed the monster
             is_weakness: Whether the final action was a weakness hit
         """
-        items_acquired = self._collect_items_acquired(monster)
+        item_names = self._get_item_names_from_monster(monster)
 
         # If we know the final action, include it in the victory description
-        action_label = self._action_label(final_action) if final_action else None
+        action_label = self._get_action_label(final_action) if final_action else None
 
-        self._call_storyteller_with_loading(
+        self._generate_narrative(
             lambda: self.storyteller.describe_victory(
                 monster.name,
                 monster.description,
-                items_acquired,
+                item_names,
                 self.player,
                 final_action=action_label,
                 is_weakness=is_weakness
@@ -623,13 +623,13 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         was_complete_before = self._has_all_gear()
         self.player.add_armor_piece(drop)
         if not was_complete_before and self._has_all_gear():
-            self._call_storyteller_with_loading(
+            self._generate_narrative(
                 lambda: self.storyteller.describe_all_gear_recovered(self.player),
                 None,
                 "You have recovered all of your stolen gear! Only the Heart of Radiance remains to be recovered from the final boss."
             )
 
-    def _status_text(self) -> str:
+    def _get_status_display(self) -> str:
         hp = f"HP {self.player.health}/{self.player.max_health}"
         defense = f"Defense {self.player.get_defense()}"
         pots = f"Potions {self.player.inventory.num_potions}"

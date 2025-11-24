@@ -70,11 +70,11 @@ class Actor:
     def __post_init__(self) -> None:
         self.health = self.max_health
 
-    def take_damage(self, raw_damage: int, defense: int = 0) -> int:
+    def take_damage(self, incoming_damage: int, defense: int = 0) -> int:
         """Apply damage reduced by defense; returns actual damage taken."""
-        reduced = max(0, raw_damage - max(0, defense))
-        self.health = max(0, self.health - reduced)
-        return reduced
+        damage_after_defense = max(0, incoming_damage - max(0, defense))
+        self.health = max(0, self.health - damage_after_defense)
+        return damage_after_defense
 
     def is_alive(self) -> bool:
         return self.health > 0
@@ -132,25 +132,25 @@ class Player(Actor):
             return True
         return False
 
-    def attempt_flee(self, random_func: Callable[[], float] | None = None) -> bool:
+    def attempt_flee(self, random_generator: Callable[[], float] | None = None) -> bool:
         # Escape scroll guarantees flee
         if self.inventory.remove_escape_scroll():
             return True
         # Otherwise chance-based
-        roll = (random_func or random.random)()
-        return roll < config.FLEE_SUCCESS_CHANCE
+        flee_roll = (random_generator or random.random)()
+        return flee_roll < config.FLEE_SUCCESS_CHANCE
 
     def holy_smite(self) -> int:
-        base = config.HOLY_SMITE_BASE_DAMAGE + self.strength
-        return base
+        base_damage = config.HOLY_SMITE_BASE_DAMAGE + self.strength
+        return base_damage
 
     def sword_slash(self) -> int:
-        base = config.SWORD_SLASH_BASE_DAMAGE + self.strength
-        return base
+        base_damage = config.SWORD_SLASH_BASE_DAMAGE + self.strength
+        return base_damage
 
     def shield_bash(self) -> int:
-        base = config.SHIELD_BASH_BASE_DAMAGE + self.strength
-        return base
+        base_damage = config.SHIELD_BASH_BASE_DAMAGE + self.strength
+        return base_damage
 
     def pray_for_restoration(self) -> None:
         self.health = self.max_health
@@ -177,16 +177,16 @@ class Monster(Actor):
 
     def attack(self) -> int:
         # Slight randomness to monster damage
-        variance = random.randint(0, 2)
-        return self.strength + variance
+        damage_variance = random.randint(0, 2)
+        return self.strength + damage_variance
 
     def apply_weakness_bonus(self, action: Action, base_damage: int) -> int:
-        action_to_weakness = {
+        ACTION_WEAKNESS_MAP = {
             Action.HOLY_SMITE: Weakness.HOLY_SMITE,
             Action.SWORD_SLASH: Weakness.SWORD_SLASH,
             Action.SHIELD_BASH: Weakness.SHIELD_BASH,
         }
-        weakness_for_action = action_to_weakness.get(action)
-        if weakness_for_action is not None and weakness_for_action in self.weaknesses:
+        matching_weakness = ACTION_WEAKNESS_MAP.get(action)
+        if matching_weakness is not None and matching_weakness in self.weaknesses:
             return base_damage + config.WEAKNESS_BONUS_DAMAGE
         return base_damage

@@ -19,10 +19,10 @@ def prompt_choice(storyteller, title: str, options: List[str]) -> int:
         sys.stdout.flush()
         try:
             # Try reading from stdin directly as a workaround for Git Bash issues
-            raw_input_value = sys.stdin.readline()
-            if not raw_input_value:
+            user_input = sys.stdin.readline()
+            if not user_input:
                 raise EOFError("End of input")
-            raw_input_value = raw_input_value.strip()
+            user_input = user_input.strip()
         except (EOFError, KeyboardInterrupt) as e:
             raise
         except Exception as e:
@@ -30,9 +30,9 @@ def prompt_choice(storyteller, title: str, options: List[str]) -> int:
             import traceback
             traceback.print_exc()
             raise
-        if raw_input_value.isdigit():
-            selection_number = int(raw_input_value)
-            if 1 <= selection_number <= len(options):
-                selected_idx = selection_number - 1
-                return selected_idx
+        if user_input.isdigit():
+            choice_number = int(user_input)
+            if 1 <= choice_number <= len(options):
+                selected_index = choice_number - 1
+                return selected_index
         show(storyteller, "Invalid input. Please enter a valid number.")
