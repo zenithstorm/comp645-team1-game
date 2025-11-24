@@ -302,7 +302,6 @@ class GameSystem:
             print("The game cannot continue without the Story Teller. Exiting...", flush=True)
             import sys
             sys.exit(1)
-        print(self._create_status_display(), flush=True)
 
     def _format_item_name(self, item: DropResult) -> str:
         """Format a DropResult item name for narrative display.
@@ -352,6 +351,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 self._exploration_phase()
             else:
                 self._combat_phase()
+            print(self._create_status_display(), flush=True)
         if self.game_won:
             victory_text = "The last foe falls; somewhere, an exit reveals itself."
             self.storyteller.track_event("game_victory", victory_text)
@@ -365,8 +365,6 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
     # Safe / Pre-combat
     # =====================
     def _exploration_phase(self) -> None:
-        status_display = self._create_status_display()
-        print(status_display, flush=True)
         action_menu: List[Tuple[str, str]] = [("Proceed onward", "proceed")]
         if self.player.health < self.player.max_health:
             action_menu.append(("Pray for restoration (full heal)", "pray"))
@@ -420,7 +418,6 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 print(fallback, flush=True)
             # Apply the loot after showing the description
             self._apply_loot(drop)
-            print(self._create_status_display(), flush=True)
             return
         # Monster room
         # Get the drop for this monster
