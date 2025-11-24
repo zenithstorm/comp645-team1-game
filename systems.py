@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 from typing import List, Optional, Tuple, Protocol, Any, Callable
 
 import config
@@ -243,6 +244,18 @@ class DropCalculator:
             return armor_piece
         return DropResult.NO_ITEM
 
+@dataclass
+class ActionOption:
+    """Represents a menu option with its display label and action identifier.
+
+    Attributes:
+        display_label: The text shown to the user in the menu
+        action_id: The identifier used by the code to determine what action to perform
+    """
+    display_label: str
+    action_id: str
+
+
 class GameSystem:
     # OO rationale: Orchestrator and state machine for the game flow. It
     # coordinates services (storyteller, RNG, generators) and owns session
@@ -365,12 +378,14 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
     # Safe / Pre-combat
     # =====================
     def _exploration_phase(self) -> None:
-        action_menu: List[Tuple[str, str]] = [("Proceed onward", "proceed")]
+        action_options: List[ActionOption] = [
+            ActionOption("Proceed onward", "proceed")
+        ]
         if self.player.health < self.player.max_health:
-            action_menu.append(("Pray for restoration (full heal)", "pray"))
-        option_labels = [label for label, _ in action_menu]
+            action_options.append(ActionOption("Pray for restoration (full heal)", "pray"))
+        option_labels = [option.display_label for option in action_options]
         selected_index = ui.prompt_choice("Choose your course:", option_labels)
-        action_choice = action_menu[selected_index][1]
+        action_choice = action_options[selected_index].action_id
         if action_choice == "proceed":
             self._explore_room()
         elif action_choice == "pray":
