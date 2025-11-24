@@ -284,7 +284,7 @@ class GameSystem:
             base_defense=config.PLAYER_BASE_DEFENSE,
         )
         # Player starts injured from the ambush
-        self.player.health = 10
+        self.player.health = 3
         self.current_monster: Optional[Monster] = None
         self.drop_calculator = DropCalculator(self.random_provider)
         self.monster_generator = MonsterGenerator(self.random_provider)
@@ -358,10 +358,6 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             victory_text = "The last foe falls; somewhere, an exit reveals itself."
             self.storyteller.track_event("game_victory", victory_text)
             print(victory_text, flush=True)
-        else:
-            game_over_text = "Your journey ends here; the dark grows still."
-            self.storyteller.track_event("game_over", game_over_text)
-            print(game_over_text, flush=True)
 
     # =====================
     # Safe / Pre-combat
@@ -508,7 +504,8 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                         ),
                         "combat"
                     )
-            print(self._create_status_display(), flush=True)
+            if self.player.is_alive():
+                print(self._create_status_display(), flush=True)
 
     def _get_available_combat_actions(self) -> List[Action]:
         options: List[Action] = list(self.player.abilities().keys())

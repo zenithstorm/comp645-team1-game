@@ -106,6 +106,27 @@ class LLMStoryTeller:
             # Re-raise other errors
             raise
 
+    def _generate_narrative(self, prompt: str, max_tokens: int, history_label: str) -> str:
+        """Generate a narrative description using the LLM and update conversation history.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            max_tokens: Maximum tokens for the response
+            history_label: Label for the conversation history entry (e.g., "Combat turn (Holy Smite)")
+
+        Returns:
+            The generated narrative description
+        """
+        messages = self.conversation_history.copy()
+        messages.append({"role": "user", "content": prompt})
+
+        description = self._call_llm(messages, max_tokens)
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": f"{history_label}: {description}"
+        })
+        return description
+
     def track_event(self, event_type: str, description: str) -> None:
         """Add a game event to the conversation history so the LLM remembers it.
 
@@ -168,6 +189,8 @@ Write a vivid 2-4 sentence description of this complete combat exchange. Describ
 
 Be cinematic and immersive, like a dungeon master narrating a complete combat turn. Flow naturally from the player's action to the monster's response (or death).
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., ⚔️ for combat, 🛡️ for shields, ✨ for magic, 💀 for death, etc.).
+
 IMPORTANT: Only mention equipment (shield, sword, armor) if the player actually has it. If they don't have armor, describe them in simple clothing that might be worn under armor, not armor. If they don't have a shield, they can't raise a shield to block.
 
 Example style (monster survives):
@@ -178,15 +201,7 @@ Example style (monster dies):
 
 Write only the description, no quotes or labels:"""
 
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=350)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Combat turn ({action}): {description}"
-        })
-        return description
+        return self._generate_narrative(prompt, max_tokens=350, history_label=f"Combat turn ({action})")
 
     def describe_empty_room(self) -> str:
         """Generate narrative description of a room.
@@ -203,6 +218,8 @@ You may describe old furniture, scattered supplies, broken barricades, makeshift
 
 Capture the feeling of brief respite mixed with unease, like a dungeon master describing a room between encounters.
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., 🕯️ for torchlight, 🗝️ for keys, 📜 for scrolls, 🏺 for containers, etc.).
+
 Example style:
 "The corridor opens into a cramped study carved into the stone. A toppled desk lies on its side, its drawers yanked out and emptied long ago. Scraps of parchment litter the floor, torn and trampled by both boot and claw."
 "You step into a chamber where crude barricades of crates and broken furniture still lean against the walls. Bandits must have tried to fortify this place, but the splintered wood and dried drag marks suggest they didn't hold it for long."
@@ -211,15 +228,7 @@ Example style:
 Write only the description, with no quotes or labels:
 """
 
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=200)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Empty room: {description}"
-        })
-        return description
+        return self._generate_narrative(prompt, max_tokens=200, history_label="Empty room")
 
     def describe_loot_find(
         self,
@@ -260,6 +269,8 @@ Write only the description, with no quotes or labels:
 
 Write a vivid 1-3 sentence description of finding this item. Describe how it's discovered, its condition, and the player's reaction. Be cinematic and immersive, like a dungeon master narrating a discovery.
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., 🛡️ for shields, 🗡️ for swords, ⚔️ for weapons, 🧪 for potions, 📜 for scrolls, ✨ for magic items, etc.).
+
 IMPORTANT: If it's the player's stolen gear (shield, sword, armor), describe it as their own equipment (e.g., "your shield", "your sword", "your helm"). If it's regular loot (potions, scrolls), describe it as something found.
 
 Example style (player's gear):
@@ -270,15 +281,7 @@ Example style (regular loot):
 
 Write only the description, no quotes or labels:"""
 
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=250)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Loot find ({item_name}): {description}"
-        })
-        return description
+        return self._generate_narrative(prompt, max_tokens=250, history_label=f"Loot find ({item_name})")
 
     def describe_victory(
         self,
@@ -319,6 +322,8 @@ Write only the description, no quotes or labels:"""
 
 Write a vivid 2-4 sentence description that combines BOTH the final attack and the monster's defeat. Describe the attack itself (how the knight strikes), the monster's reaction and final moments, how it falls, and if items are present, how the knight retrieves them. Be cinematic and immersive, like a dungeon master narrating a complete victory scene.
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., ⚔️ for combat, ✨ for magic, 💀 for death, 🛡️ for shields, 🗡️ for swords, 💎 for treasures, etc.).
+
 IMPORTANT:
 - Include the attack description in the narrative (e.g., "You raise your hand and unleash a blinding beam of holy power...")
 - Only mention equipment (shield, sword, armor) if the player actually has it or is acquiring it
@@ -329,15 +334,7 @@ Example style:
 
 Write only the description, no quotes or labels:"""
 
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=300)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Victory over {monster_name}: {description}"
-        })
-        return description
+        return self._generate_narrative(prompt, max_tokens=300, history_label=f"Victory over {monster_name}")
 
     def _get_player_gear_list(self, player: Player) -> List[str]:
         """Get a list of all gear items the player currently has.
@@ -405,6 +402,8 @@ Write only the description, no quotes or labels:"""
 
 Write a vivid 1-3 sentence description of the prayer. Describe how the knight kneels, calls upon their god, and feels the divine light heal their wounds. Be atmospheric and immersive, like a dungeon master narrating a moment of faith.
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., ✨ for divine light, 🙏 for prayer, 💫 for healing, ⚡ for divine power, etc.).
+
 IMPORTANT: Do NOT mention armor, shield, or sword unless the player actually has them. If they don't have armor, describe them in simple clothing that might be worn under armor, not armor.
 
 Example style (when no armor):
@@ -412,15 +411,7 @@ Example style (when no armor):
 
 Write only the description, no quotes or labels:"""
 
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=250)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Prayer for restoration: {description}"
-        })
-        return description
+        return self._generate_narrative(prompt, max_tokens=250, history_label="Prayer for restoration")
 
     def describe_all_gear_recovered(self, player: Player) -> str:
         """Generate narrative description when the player recovers the final piece of gear.
@@ -441,20 +432,14 @@ Write a vivid 2-4 sentence description of this momentous occasion. The knight sh
 
 Be emotional and triumphant, but also focused on the final goal. This is a turning point in their journey.
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., ✨ for triumph, 🛡️ for armor, ⚔️ for readiness, 💎 for the relic, 🌟 for hope, etc.).
+
 Example style:
 "You feel the weight of the final piece settle into place, and suddenly, you are whole again. Every piece of your stolen regalia has been reclaimed - your shield, your sword, your helm, your armor. The familiar weight of your complete holy knight's equipment fills you with a sense of purpose you haven't felt since the ambush. You stand tall, fully restored, and your gaze turns toward the deeper darkness where the final boss awaits. The Heart of Radiance calls to you, and you are ready to answer."
 
 Write only the description, no quotes or labels:"""
 
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=300)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"All gear recovered: {description}"
-        })
-        return description
+        return self._generate_narrative(prompt, max_tokens=300, history_label="All gear recovered")
 
     def describe_potion_use(self, player: Player) -> str:
         """Generate narrative description of using a health potion."""
@@ -466,20 +451,14 @@ Write only the description, no quotes or labels:"""
 
 Write a vivid 1-3 sentence description of drinking the potion. Describe the act of drinking, the taste, and the healing effect. Be atmospheric and immersive, like a dungeon master narrating item use.
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., 🧪 for potions, ✨ for healing magic, 💚 for health, 💫 for restoration, etc.).
+
 Example style:
 "You uncork the vial and drink the shimmering liquid in one swift motion. The potion tastes of honey and light, spreading warmth through your body. Your wounds close, your breathing steadies, and strength floods back into your limbs."
 
 Write only the description, no quotes or labels:"""
 
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=250)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Potion use: {description}"
-        })
-        return description
+        return self._generate_narrative(prompt, max_tokens=250, history_label="Potion use")
 
     def describe_flee(self, success: bool, monster_name: str) -> str:
         """Generate narrative description of attempting to flee."""
@@ -489,19 +468,17 @@ The attempt was {'successful' if success else 'unsuccessful'}.
 
 Write a vivid 1-3 sentence description of the attempt to flee. Be atmospheric and immersive, like a dungeon master narrating escape.
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., 🏃 for running, 💨 for speed, ⚠️ for danger, etc.).
+
 {'Example for success: "You break away from the creature, turning and sprinting down the corridor. The monster\'s snarls fade behind you as you put distance between yourself and danger."' if success else 'Example for failure: "You try to disengage, but the creature is too quick. Its claws rake across your back as you turn, forcing you back into the fight."'}
 
 Write only the description, no quotes or labels:"""
 
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=250)
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Flee attempt ({'success' if success else 'failed'}): {description}"
-        })
-        return description
+        return self._generate_narrative(
+            prompt,
+            max_tokens=250,
+            history_label=f"Flee attempt ({'success' if success else 'failed'})"
+        )
 
     def describe_encounter(
         self,
@@ -562,6 +539,8 @@ Write a vivid, atmospheric 1-4 sentence description of this encounter scene. Des
 - Do NOT start with "Enemy spotted:" or similar mechanical phrases
 - Write in second person ("you see", "you notice", etc.)
 
+Add emojis appropriately throughout the description to add color and visual interest (e.g., 🕯️ for torchlight, 👹 for monsters, 🛡️ for shields, 🗡️ for swords, 🧪 for potions, 💀 for skeletons, etc.).
+
 Example style (with player's gear):
 "A massive rat startles at your approach, its whiskers twitching above a shallow pile of scavenged debris. Half-buried there is your shield—its radiant crest muted under dust but unmistakably yours. The creature chitters defensively, as if guarding the strange prize it claimed."
 
@@ -570,14 +549,4 @@ Example style (with monster loot):
 
 Write only the description, no quotes or labels:"""
 
-        # Build messages with conversation history for context
-        messages = self.conversation_history.copy()
-        messages.append({"role": "user", "content": prompt})
-
-        description = self._call_llm(messages, max_tokens=300)
-        # Add to conversation history
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": f"Encounter with {monster_name}: {description}"
-        })
-        return description
+        return self._generate_narrative(prompt, max_tokens=300, history_label=f"Encounter with {monster_name}")

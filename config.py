@@ -7,15 +7,15 @@ PLAYER_BASE_STRENGTH: int = 5
 PLAYER_BASE_DEFENSE: int = 1
 
 # Monster ranges
-MONSTER_HEALTH_MIN: int = 12
-MONSTER_HEALTH_MAX: int = 22
-MONSTER_STRENGTH_MIN: int = 2
-MONSTER_STRENGTH_MAX: int = 6
+MONSTER_HEALTH_MIN: int = 16
+MONSTER_HEALTH_MAX: int = 26
+MONSTER_STRENGTH_MIN: int = 3
+MONSTER_STRENGTH_MAX: int = 7
 
 # Abilities base damage
-HOLY_SMITE_BASE_DAMAGE: int = 7
-SWORD_SLASH_BASE_DAMAGE: int = 9
-SHIELD_BASH_BASE_DAMAGE: int = 6
+HOLY_SMITE_BASE_DAMAGE: int = 6
+SWORD_SLASH_BASE_DAMAGE: int = 8
+SHIELD_BASH_BASE_DAMAGE: int = 5
 
 # Weakness bonus damage
 WEAKNESS_BONUS_DAMAGE: int = 5
@@ -33,10 +33,10 @@ BOSS_SPAWN_THRESHOLD: int = 4  # minimum defeated monsters before boss can appea
 BOSS_SPAWN_CHANCE: float = 0.2  # chance per monster room after threshold
 
 # Room selection weights (must sum to ~1.0)
-ROOM_TYPE_WEIGHTS = {
-    "empty": 0.4,
-    "loot": 0.2,
-    "monster": 0.4,
+ROOM_TYPE_WEIGHTS = { # try .2, .1, .7
+    "empty": 0.1,
+    "loot": 0.1,
+    "monster": 0.8,
 }
 
 # Loot probabilities (used by DropCalculator)
