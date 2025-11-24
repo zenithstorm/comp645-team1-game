@@ -336,9 +336,9 @@ class GameSystem:
     def start_game(self) -> None:
         opening_text = """You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
 
-Faint torchlight flickers across toppled pillars and shattered glass — the remnants of the old sanctum where you had just retrieved the **Heart of Radiance**, a sacred relic.
+Faint torchlight flickers across toppled pillars and shattered glass — the remnants of the old sanctum where you had just retrieved the Heart of Radiance, a sacred relic.
 
-You remember now: the attack came at dusk. A pack of goblin bandits ambushed you, stole your gear, shattered your enchanted map, and stole the **Heart of Radiance**... then left you for dead.
+You remember now: the attack came at dusk. A pack of goblin bandits ambushed you, stole your gear, shattered your enchanted map, and stole the Heart of Radiance... then left you for dead.
 
 Without the map's guiding spell, the sanctum's halls — once woven with radiant wards to conceal the relic — now twist and shift at random. Each step forward reshapes the labyrinth anew.
 
@@ -373,7 +373,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         if self.player.health < self.player.max_health:
             action_options.append(ActionOption("Pray for restoration (full heal)", "pray"))
         option_labels = [option.display_label for option in action_options]
-        selected_index = ui.prompt_choice("Choose your course:", option_labels)
+        selected_index = ui.prompt_choice("📜 Choose your course:", option_labels)
         action_choice = action_options[selected_index].action_id
         if action_choice == "proceed":
             self._explore_room()
@@ -448,13 +448,12 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         while self.player.is_alive() and self.current_monster.is_alive():
             available_actions = self._get_available_combat_actions()
             action_labels = [self._get_action_label(action) for action in available_actions]
-            selected_index = ui.prompt_choice("In battle, choose your action:", action_labels)
+            selected_index = ui.prompt_choice("⚔️ In battle, choose your action:", action_labels)
             selected_action = available_actions[selected_index]
             if selected_action == Action.USE_POTION:
                 self._generate_narrative(
                     lambda: self.storyteller.describe_potion_use(self.player),
-                    None,  # Don't track potion use as a significant event
-                    "You use a potion and restore full health."
+                    None  # Don't track potion use as a significant event
                 )
             elif selected_action == Action.FLEE:
                 flee_succeeded = self.player.attempt_flee(self.random_provider.random)
@@ -509,6 +508,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                         ),
                         "combat"
                     )
+            print(self._create_status_display(), flush=True)
 
     def _get_available_combat_actions(self) -> List[Action]:
         options: List[Action] = list(self.player.abilities().keys())
@@ -596,11 +596,11 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         # Handle unique ability unlocks
         if drop == DropResult.SHIELD:
             self.player.has_shield = True
-            print("Shield Bash unlocked", flush=True)
+            print("Shield Bash unlocked! 🛡️", flush=True)
             return
         if drop == DropResult.SWORD:
             self.player.has_sword = True
-            print("Sword Slash unlocked", flush=True)
+            print("Sword Slash unlocked! 🗡️", flush=True)
             return
 
         # Handle armor pieces
@@ -623,4 +623,4 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         if self.player.has_sword:
             abilities.append("Sword Slash")
         abilities_str = "Abilities: " + ", ".join(abilities)
-        return f"{hp} | {defense} | {pots} | {scrolls}\n{abilities_str}"
+        return f"❤️ {hp} | {defense} | {pots} | {scrolls}\n{abilities_str}"
