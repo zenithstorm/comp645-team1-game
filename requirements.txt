@@ -1,0 +1,4 @@
+# OpenAI for LLM-powered descriptions
+# New accounts get free credits ($5-18), and gpt-4o-mini is very cheap!
+openai>=1.0.0
+
