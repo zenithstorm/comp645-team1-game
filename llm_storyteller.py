@@ -531,18 +531,13 @@ Write only the description, no quotes or labels:"""
 
         if item is not None and item != DropResult.NO_ITEM:
             # Player's stolen gear: shield, sword, and all armor pieces
-            if item in DropResult.unique_gear():
-                is_player_gear = True
-                if item == DropResult.SHIELD:
-                    item_description = "a shield"
-                elif item == DropResult.SWORD:
-                    item_description = "a sword"
-                else:
-                    # Armor piece
-                    item_description = item.name.replace("_", " ").lower()
+            is_player_gear = item in DropResult.unique_gear()
+            if item == DropResult.SHIELD:
+                item_description = "a shield"
+            elif item == DropResult.SWORD:
+                item_description = "a sword"
             else:
-                # Regular monster loot (potions, scrolls)
-                is_player_gear = False
+                # Armor piece or regular loot
                 item_description = item.name.replace("_", " ").lower()
 
         items_text = ""

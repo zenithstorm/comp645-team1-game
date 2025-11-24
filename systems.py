@@ -114,9 +114,16 @@ class MonsterGenerator:
             "strength": config.BOSS_STRENGTH,
             "is_boss": True,
         }
+        # Reuse generate_monster logic but override with boss template
+        max_health_points = boss_template.get("hp") or self.random_provider.randint(
+            config.MONSTER_HEALTH_MIN, config.MONSTER_HEALTH_MAX
+        )
+        attack_strength = boss_template.get("strength") or self.random_provider.randint(
+            config.MONSTER_STRENGTH_MIN, config.MONSTER_STRENGTH_MAX
+        )
         return Monster(
-            max_health=boss_template["hp"],
-            strength=boss_template["strength"],
+            max_health=max_health_points,
+            strength=attack_strength,
             name=boss_template["name"],
             weaknesses=list(boss_template["weaknesses"]),
             description=boss_template["description"],
@@ -183,12 +190,16 @@ class DropCalculator:
         ]
         chosen_bucket = pick_weighted(buckets, self.random_provider)
 
-        if chosen_bucket == "NO_ITEM":
-            return DropResult.NO_ITEM
-        if chosen_bucket == "HEALTH_POTION":
-            return DropResult.HEALTH_POTION
-        if chosen_bucket == "ESCAPE_SCROLL":
-            return DropResult.ESCAPE_SCROLL
+        # Map bucket names to DropResult values
+        bucket_to_drop = {
+            "NO_ITEM": DropResult.NO_ITEM,
+            "HEALTH_POTION": DropResult.HEALTH_POTION,
+            "ESCAPE_SCROLL": DropResult.ESCAPE_SCROLL,
+        }
+
+        if chosen_bucket in bucket_to_drop:
+            return bucket_to_drop[chosen_bucket]
+
         if chosen_bucket == "ARMOR" and remaining_armor:
             armor_piece = self.random_provider.choice(remaining_armor)
             self._remaining_gear.remove(armor_piece)
@@ -255,6 +266,21 @@ class GameSystem:
             print(f"Error generating description: {e}", flush=True)
             ui.show(self.storyteller, fallback_text)
 
+    def _format_item_name(self, item: DropResult) -> str:
+        """Format a DropResult item name for narrative display.
+
+        Args:
+            item: The DropResult item
+
+        Returns:
+            Formatted item name (e.g., "a shield", "health potion")
+        """
+        if item == DropResult.SHIELD:
+            return "a shield"
+        if item == DropResult.SWORD:
+            return "a sword"
+        return item.name.replace("_", " ").lower()
+
     def _collect_items_acquired(self, monster: Monster) -> List[str]:
         """Collect all items that will be acquired after defeating a monster.
 
@@ -266,12 +292,7 @@ class GameSystem:
         """
         if monster.item_drop is None or monster.item_drop == DropResult.NO_ITEM:
             return []
-        # Format shield/sword as "a shield"/"a sword" for narrative consistency
-        if monster.item_drop == DropResult.SHIELD:
-            return ["a shield"]
-        if monster.item_drop == DropResult.SWORD:
-            return ["a sword"]
-        return [monster.item_drop.name.replace("_", " ").lower()]
+        return [self._format_item_name(monster.item_drop)]
 
     def start_game(self) -> None:
         opening_text = """You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
@@ -348,18 +369,18 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                     return self.storyteller.describe_empty_room()
                 return self.storyteller.describe_loot_find(drop, self.player)
 
+            # Determine fallback text
+            if drop == DropResult.NO_ITEM:
+                fallback = "No notable items found."
+            else:
+                fallback = f"Found {self._format_item_name(drop)}."
+
             try:
                 description = get_loot_description()
                 self.storyteller.track_event("loot", description)
                 ui.show(self.storyteller, description)
             except Exception as e:
                 print(f"Error generating description: {e}", flush=True)
-                # Fallback to simple message
-                if drop == DropResult.NO_ITEM:
-                    fallback = "No notable items found."
-                else:
-                    item_name = drop.name.replace("_", " ").title() if drop not in (DropResult.SHIELD, DropResult.SWORD) else drop.name.replace("_", " ").title()
-                    fallback = f"Found {item_name}."
                 ui.show(self.storyteller, fallback)
             # Apply the loot after showing the description
             self._apply_loot(drop)
@@ -540,26 +561,36 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
     def _apply_loot(self, drop: DropResult) -> None:
         """Apply loot to player and show unlock messages if needed."""
         if drop == DropResult.NO_ITEM:
-            pass  # Nothing to apply
-        elif drop == DropResult.HEALTH_POTION:
-            self.player.inventory.add_potion()
-        elif drop == DropResult.ESCAPE_SCROLL:
-            self.player.inventory.add_escape_scroll()
-        elif drop == DropResult.SHIELD:
+            return
+
+        # Handle consumables with a mapping
+        consumable_handlers = {
+            DropResult.HEALTH_POTION: lambda: self.player.inventory.add_potion(),
+            DropResult.ESCAPE_SCROLL: lambda: self.player.inventory.add_escape_scroll(),
+        }
+        if drop in consumable_handlers:
+            consumable_handlers[drop]()
+            return
+
+        # Handle unique gear unlocks
+        if drop == DropResult.SHIELD:
             self.player.has_shield = True
             ui.show(self.storyteller, "Shield Bash unlocked")
-        elif drop == DropResult.SWORD:
+            return
+        if drop == DropResult.SWORD:
             self.player.has_sword = True
             ui.show(self.storyteller, "Sword Slash unlocked")
-        else:
-            was_complete_before = self._has_all_gear()
-            self.player.add_armor_piece(drop)
-            if not was_complete_before and self._has_all_gear():
-                self._call_storyteller_with_loading(
-                    lambda: self.storyteller.describe_all_gear_recovered(self.player),
-                    None,
-                    "You have recovered all of your stolen gear! Only the Heart of Radiance remains to be recovered from the final boss."
-                )
+            return
+
+        # Handle armor pieces
+        was_complete_before = self._has_all_gear()
+        self.player.add_armor_piece(drop)
+        if not was_complete_before and self._has_all_gear():
+            self._call_storyteller_with_loading(
+                lambda: self.storyteller.describe_all_gear_recovered(self.player),
+                None,
+                "You have recovered all of your stolen gear! Only the Heart of Radiance remains to be recovered from the final boss."
+            )
 
     def _status_text(self) -> str:
         hp = f"HP {self.player.health}/{self.player.max_health}"
