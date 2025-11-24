@@ -29,11 +29,11 @@ FLEE_SUCCESS_CHANCE: float = 0.5  # used when no escape scroll
 # Boss tuning
 BOSS_HP: int = 45
 BOSS_STRENGTH: int = 9
-BOSS_SPAWN_THRESHOLD: int = 4  # minimum defeated monsters before boss can appear
+BOSS_SPAWN_THRESHOLD: int = 3  # minimum defeated monsters before boss can appear
 BOSS_SPAWN_CHANCE: float = 0.2  # chance per monster room after threshold
 
 # Room selection weights (must sum to ~1.0)
-ROOM_TYPE_WEIGHTS = { # try .2, .1, .7
+ROOM_TYPE_WEIGHTS = {
     "empty": 0.1,
     "loot": 0.1,
     "monster": 0.8,
@@ -42,8 +42,7 @@ ROOM_TYPE_WEIGHTS = { # try .2, .1, .7
 # Loot probabilities (used by DropCalculator)
 DROP_WEIGHTS = {
     "NO_ITEM": 0.4,
-    "HEALTH_POTION": 0.3,
-    "ESCAPE_SCROLL": 0.2,
-    # Armor has a small chance; if exhausted, it falls back to other results
-    "ARMOR": 0.1,
+    "HEALTH_POTION": 0.2,
+    "ESCAPE_SCROLL": 0.1,
+    "ARMOR": 0.3, # If there are no more armor drops, this weight is added to NO_ITEM
 }
