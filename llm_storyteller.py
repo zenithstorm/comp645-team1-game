@@ -284,7 +284,7 @@ Write only the description, no quotes or labels:"""
         self,
         monster_name: str,
         monster_description: str,
-        items_acquired: List[str],
+        item_acquired: Optional[str],
         player: Player,
         final_action: Optional[str] = None,
         is_weakness: bool = False
@@ -294,18 +294,15 @@ Write only the description, no quotes or labels:"""
         Args:
             monster_name: Name of the monster
             monster_description: Description of the monster
-            items_acquired: List of items being acquired (e.g., ["a shield", "health potion"])
+            item_acquired: The item being acquired (e.g., "a shield", "health potion") or None
             player: The player object (before acquiring new items)
             final_action: The action that killed the monster (e.g., "Holy Smite", "Shield Bash")
             is_weakness: Whether the final action was a weakness hit
         """
         player_context = self._get_player_context(player)
         items_text = ""
-        if items_acquired:
-            if len(items_acquired) == 1:
-                items_text = f" The creature had: {items_acquired[0]}"
-            else:
-                items_text = f" The creature had: {', '.join(items_acquired[:-1])}, and {items_acquired[-1]}"
+        if item_acquired:
+            items_text = f" The creature had: {item_acquired}"
 
         action_text = ""
         if final_action:

@@ -316,33 +316,22 @@ class GameSystem:
             import sys
             sys.exit(1)
 
-    def _format_item_name(self, item: DropResult) -> str:
+    def _format_item_name(self, item: DropResult) -> Optional[str]:
         """Format a DropResult item name for narrative display.
 
         Args:
-            item: The DropResult item
+            item: The DropResult item (or None/NO_ITEM for no item)
 
         Returns:
-            Formatted item name (e.g., "a shield", "health potion")
+            Formatted item name (e.g., "a shield", "health potion") or None if no item
         """
+        if item is None or item == DropResult.NO_ITEM:
+            return None
         if item == DropResult.SHIELD:
             return "a shield"
         if item == DropResult.SWORD:
             return "a sword"
         return item.name.replace("_", " ").lower()
-
-    def _get_item_names_from_monster(self, monster: Monster) -> List[str]:
-        """Get formatted item names that will be acquired after defeating a monster.
-
-        Args:
-            monster: The monster being defeated
-
-        Returns:
-            List of formatted item names (e.g., ["a shield", "health potion"])
-        """
-        if monster.item_drop is None or monster.item_drop == DropResult.NO_ITEM:
-            return []
-        return [self._format_item_name(monster.item_drop)]
 
     def start_game(self) -> None:
         opening_text = """You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
@@ -418,19 +407,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                     return self.storyteller.describe_empty_room()
                 return self.storyteller.describe_loot_find(drop, self.player)
 
-            # Determine fallback text
-            if drop == DropResult.NO_ITEM:
-                fallback = "No notable items found."
-            else:
-                fallback = f"Found {self._format_item_name(drop)}."
-
-            try:
-                description = get_loot_description()
-                self.storyteller.track_event("loot", description)
-                print(description, flush=True)
-            except Exception as e:
-                print(f"Error generating description: {e}", flush=True)
-                print(fallback, flush=True)
+            self._generate_narrative(
+                get_loot_description,
+                "loot"
+            )
             # Apply the loot after showing the description
             self._apply_loot(drop)
             return
@@ -564,7 +544,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             final_action: The action that killed the monster
             is_weakness: Whether the final action was a weakness hit
         """
-        item_names = self._get_item_names_from_monster(monster)
+        item_name = self._format_item_name(monster.item_drop)
 
         # If we know the final action, include it in the victory description
         action_label = self._get_action_label(final_action) if final_action else None
@@ -573,7 +553,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             lambda: self.storyteller.describe_victory(
                 monster.name,
                 monster.description,
-                item_names,
+                item_name,
                 self.player,
                 final_action=action_label,
                 is_weakness=is_weakness
