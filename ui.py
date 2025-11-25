@@ -25,6 +25,10 @@ def prompt_choice(title: str, options: List[str]) -> int:
             import traceback
             traceback.print_exc()
             raise
+        if user_input.lower() == "x":
+            print("Exiting game...", flush=True)
+            import sys
+            sys.exit(0)
         if user_input.isdigit():
             choice_number = int(user_input)
             if 1 <= choice_number <= len(options):

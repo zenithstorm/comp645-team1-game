@@ -655,4 +655,6 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         # Create a visually distinct status box
         separator = "═" * 60
         status_line = f"{hp} | {defense} | {pots} | {scrolls}"
-        return f"\n{separator}\n📜 STATUS\n{separator}\n{status_line}\n{abilities_str}\n{separator}\n"
+        # Subtle exit hint in the footer
+        exit_hint = "  (Press 'x' to exit)"
+        return f"\n{separator}\n📜 STATUS\n{separator}\n{status_line}\n{abilities_str}\n{separator}{exit_hint}\n"
