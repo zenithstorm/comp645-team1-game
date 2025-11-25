@@ -42,7 +42,7 @@ ROOM_TYPE_WEIGHTS = {
 # Loot probabilities (used by DropCalculator)
 DROP_WEIGHTS = {
     "NO_ITEM": 0.4,
-    "HEALTH_POTION": 0.2,
-    "ESCAPE_SCROLL": 0.1,
+    "HEALTH_POTION": 0.25,
+    "ESCAPE_SCROLL": 0.05,
     "ARMOR": 0.3, # If there are no more armor drops, this weight is added to NO_ITEM
 }

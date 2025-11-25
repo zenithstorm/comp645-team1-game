@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Protocol, Any, Callable
+from enum import Enum
 
 import config
 import ui
@@ -36,7 +37,7 @@ class DefaultRandomProvider:
     def choice(self, seq: List[Any]) -> Any:
         return random.choice(seq)
 
-def select_weighted_random(options: List[Tuple[str, float]], random_provider: RandomProvider) -> str:
+def select_weighted_random(options: List[WeightedOption], random_provider: RandomProvider) -> str:
     """Select a random option from weighted choices using probability distribution.
 
     This function implements weighted random selection, where each option has a
@@ -52,15 +53,15 @@ def select_weighted_random(options: List[Tuple[str, float]], random_provider: Ra
 
     Example:
         options = [
-            ("common", 10.0),   # 10/15 = 66.7% chance
-            ("rare", 4.0),      # 4/15 = 26.7% chance
-            ("epic", 1.0)       # 1/15 = 6.7% chance
+            WeightedOption("common", 10.0),   # 10/15 = 66.7% chance
+            WeightedOption("rare", 4.0),      # 4/15 = 26.7% chance
+            WeightedOption("epic", 1.0)       # 1/15 = 6.7% chance
         ]
         # Total weight = 15.0
         # Random number between 0-15 determines which option is selected
 
     Args:
-        options: List of (option_label, weight) tuples. Weight must be >= 0.
+        options: List of WeightedOption instances. Weight must be >= 0.
         random_provider: Random number generator (for testability).
 
     Returns:
@@ -72,22 +73,29 @@ def select_weighted_random(options: List[Tuple[str, float]], random_provider: Ra
     - Dependency inversion: consumes RandomProvider to remain deterministic in tests.
     - Decoupling: returns a label, letting each subsystem map labels to domain types.
     """
-    total_weight = sum(weight for _, weight in options)
+    if not options:
+        raise ValueError("Cannot select from empty options list")
+
+    total_weight = sum(option.weight for option in options)
     if total_weight <= 0:
-        return options[-1][0]
+        # Fallback: if all weights are zero/negative, return the last option as default
+        default_option = options[-1]
+        return default_option.label
 
     # Generate random number in range [0, total_weight)
     random_value = random_provider.random() * total_weight
 
     # Walk through options, accumulating weights until random_value falls within an option's range
     cumulative_weight = 0.0
-    for option_label, weight in options:
-        cumulative_weight += weight
+    for option in options:
+        cumulative_weight += option.weight
         if random_value <= cumulative_weight:
-            return option_label
+            return option.label
 
     # Fallback (shouldn't normally reach here due to floating point precision)
-    return options[-1][0]
+    # If we somehow didn't select anything, return the last option as default
+    fallback_option = options[-1]
+    return fallback_option.label
 
 class MonsterGenerator:
     # OO rationale: Factory responsible for building fully-formed Monster
@@ -213,27 +221,16 @@ class DropCalculator:
             player: Player instance to check current equipment (for defensive checks)
         """
 
-        # Build base weights
-        weight_no_item = config.DROP_WEIGHTS["NO_ITEM"]
-        weight_health_potion = config.DROP_WEIGHTS["HEALTH_POTION"]
-        weight_escape_scroll = config.DROP_WEIGHTS["ESCAPE_SCROLL"]
         # Check if any gear (armor pieces) remain
         # Filter _remaining_gear to get only armor pieces (exclude shield and sword)
         remaining_armor = [item for item in self._remaining_gear if item not in (DropResult.SHIELD, DropResult.SWORD)]
-        weight_armor = config.DROP_WEIGHTS["ARMOR"] if remaining_armor else 0.0
 
-        # If no armor remains, redistribute armor weight to 'no item'
-        if not remaining_armor:
-            weight_no_item += config.DROP_WEIGHTS["ARMOR"]
+        # Create loot buckets using the factory method
+        loot_buckets = LootBucket.create_buckets(player, remaining_armor)
 
-        # Armor selection is two-step: pick 'armor' bucket, then pick which piece
-        buckets: List[Tuple[str, float]] = [
-            ("NO_ITEM", weight_no_item),
-            ("HEALTH_POTION", weight_health_potion),
-            ("ESCAPE_SCROLL", weight_escape_scroll),
-            ("ARMOR", weight_armor),
-        ]
-        chosen_bucket = select_weighted_random(buckets, self.random_provider)
+        # Convert to WeightedOption for selection
+        weighted_options = [WeightedOption(bucket.category, bucket.weight) for bucket in loot_buckets]
+        chosen_bucket = select_weighted_random(weighted_options, self.random_provider)
 
         # Map bucket names to DropResult values
         bucket_to_drop = {
@@ -250,6 +247,68 @@ class DropCalculator:
             self._remaining_gear.remove(armor_piece)
             return armor_piece
         return DropResult.NO_ITEM
+
+class RoomType(Enum):
+    """Enum for different room types in the dungeon."""
+    EMPTY = "empty"
+    LOOT = "loot"
+    MONSTER = "monster"
+
+
+@dataclass
+class WeightedOption:
+    """A weighted option for random selection with validation."""
+    label: str
+    weight: float
+
+    def __post_init__(self) -> None:
+        if self.weight < 0:
+            raise ValueError(f"Weight must be non-negative, got {self.weight}")
+
+
+@dataclass
+class RoomTypeOption:
+    """Represents a room type with its spawn probability."""
+    room_type: RoomType
+    spawn_weight: float
+
+    def __post_init__(self) -> None:
+        if self.spawn_weight < 0:
+            raise ValueError(f"Spawn weight must be non-negative, got {self.spawn_weight}")
+
+
+@dataclass
+class LootBucket:
+    """Represents a loot category with its drop probability."""
+    category: str  # Will map to DropResult enum values
+    weight: float
+
+    def __post_init__(self) -> None:
+        if self.weight < 0:
+            raise ValueError(f"Weight must be non-negative, got {self.weight}")
+
+    @classmethod
+    def create_buckets(cls, player: 'Player', remaining_armor: List['DropResult']) -> List['LootBucket']:
+        """Factory method to create all loot buckets with proper weights."""
+        from models import DropResult
+
+        # Build base weights from config
+        weight_no_item = config.DROP_WEIGHTS["NO_ITEM"]
+        weight_health_potion = config.DROP_WEIGHTS["HEALTH_POTION"]
+        weight_escape_scroll = config.DROP_WEIGHTS["ESCAPE_SCROLL"]
+        weight_armor = config.DROP_WEIGHTS["ARMOR"] if remaining_armor else 0.0
+
+        # If no armor remains, redistribute armor weight to 'no item'
+        if not remaining_armor:
+            weight_no_item += config.DROP_WEIGHTS["ARMOR"]
+
+        return [
+            cls("NO_ITEM", weight_no_item),
+            cls("HEALTH_POTION", weight_health_potion),
+            cls("ESCAPE_SCROLL", weight_escape_scroll),
+            cls("ARMOR", weight_armor),
+        ]
+
 
 @dataclass
 class MonsterTemplate:
@@ -423,14 +482,14 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
 
     def _explore_room(self) -> None:
         room_type = self._select_random_room_type()
-        if room_type == "empty":
+        if room_type == RoomType.EMPTY.value:
             self._generate_narrative(
                 lambda: self.storyteller.describe_empty_room(),
                 None,  # Don't track empty rooms as significant events
                 "exploration"
             )
             return
-        if room_type == "loot":
+        if room_type == RoomType.LOOT.value:
             drop = self.drop_calculator.roll_item_drop(self.player)
             # Generate narrative description of finding the loot
             def get_loot_description():
@@ -470,8 +529,20 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
 
     def _select_random_room_type(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS
-        room_options = [(room_name, room_weight) for room_name, room_weight in room_type_weights.items()]
-        return select_weighted_random(room_options, self.random_provider)
+
+        # Create RoomTypeOption instances
+        room_options = [
+            RoomTypeOption(RoomType(room_name), room_weight)
+            for room_name, room_weight in room_type_weights.items()
+        ]
+
+        # Convert to WeightedOption for selection
+        weighted_options = [
+            WeightedOption(room_option.room_type.value, room_option.spawn_weight)
+            for room_option in room_options
+        ]
+
+        return select_weighted_random(weighted_options, self.random_provider)
 
     # =====================
     # Combat

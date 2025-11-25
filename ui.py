@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import time
 from typing import List, Optional
 
-import config
 from rich.console import Console, Group
 from rich.columns import Columns
 from rich.panel import Panel
