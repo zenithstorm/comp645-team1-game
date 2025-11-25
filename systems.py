@@ -123,14 +123,9 @@ class GameSystem:
             self._apply_loot(drop)
             return
         # Monster room
-        # Generate monster based on current progress (handles boss spawning internally)
         self.current_monster = self.monster_generator.generate_monster(self.monsters_defeated)
-
-        # Get the drop for this monster
-        drop = self.drop_calculator.get_drop_for_monster(self.monsters_defeated, self.player)
-        self.current_monster.item_drop = drop
-        # Generate full narrative encounter description from LLM
-        self.narrative_engine.describe_encounter(self.current_monster, drop, self.player)
+        self.current_monster.item_drop = self.drop_calculator.get_drop_for_monster(self.monsters_defeated, self.player)
+        self.narrative_engine.describe_encounter(self.current_monster, self.player)
 
     def _select_random_room_type(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS

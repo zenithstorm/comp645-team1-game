@@ -131,13 +131,13 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             "exploration"
         )
 
-    def describe_encounter(self, monster, drop: DropResult, player: Player) -> None:
+    def describe_encounter(self, monster, player: Player) -> None:
         """Generate narrative for monster encounter."""
         self.describe_and_narrate(
             lambda: self.storyteller.describe_encounter(
                 monster.name,
                 monster.description,
-                drop if drop != DropResult.NO_ITEM else None,
+                monster.item_drop if monster.item_drop != DropResult.NO_ITEM else None,
                 player
             ),
             "encounter",
