@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Protocol, Any, Callable
-from enum import Enum
+from typing import List, Optional, Protocol, Any, Callable
 
 import config
 import ui
 from models import (
     Action,
+    ActionOption,
     DropResult,
     Monster,
+    MonsterTemplate,
     Player,
+    RoomType,
+    RoomTypeOption,
     Weakness,
 )
 
@@ -198,20 +201,14 @@ class DropCalculator:
         """
         # Check for guaranteed progression items first
         # Shield guaranteed on 1st monster (defeated_count will be 1 after this fight)
-        # print("[DEBUG] get_drop_for_monster defeated_count =", defeated_count)
-        # print("[DEBUG] get_drop_for_monster player.has_shield =", player.has_shield)
-        # print("[DEBUG] get_drop_for_monster DropResult.SHIELD in self._remaining_gear =", DropResult.SHIELD in self._remaining_gear)
         if defeated_count == 0 and not player.has_shield and DropResult.SHIELD in self._remaining_gear:
-            # print("[DEBUG] get_drop_for_monster returning SHIELD")
             self._remaining_gear.remove(DropResult.SHIELD)
             return DropResult.SHIELD
         # Sword guaranteed on 3rd monster (defeated_count will be 3 after this fight)
         if defeated_count == 2 and not player.has_sword and DropResult.SWORD in self._remaining_gear:
-            # print("[DEBUG] get_drop_for_monster returning SWORD")
             self._remaining_gear.remove(DropResult.SWORD)
             return DropResult.SWORD
         # Otherwise, roll for a random drop (but exclude shield/sword if already dropped)
-        # print("[DEBUG] get_drop_for_monster rolling item drop")
         return self.roll_item_drop(player)
 
     def roll_item_drop(self, player: Player) -> DropResult:
@@ -248,13 +245,6 @@ class DropCalculator:
             return armor_piece
         return DropResult.NO_ITEM
 
-class RoomType(Enum):
-    """Enum for different room types in the dungeon."""
-    EMPTY = "empty"
-    LOOT = "loot"
-    MONSTER = "monster"
-
-
 @dataclass
 class WeightedOption:
     """A weighted option for random selection with validation."""
@@ -264,17 +254,6 @@ class WeightedOption:
     def __post_init__(self) -> None:
         if self.weight < 0:
             raise ValueError(f"Weight must be non-negative, got {self.weight}")
-
-
-@dataclass
-class RoomTypeOption:
-    """Represents a room type with its spawn probability."""
-    room_type: RoomType
-    spawn_weight: float
-
-    def __post_init__(self) -> None:
-        if self.spawn_weight < 0:
-            raise ValueError(f"Spawn weight must be non-negative, got {self.spawn_weight}")
 
 
 @dataclass
@@ -308,29 +287,6 @@ class LootBucket:
             cls("ESCAPE_SCROLL", weight_escape_scroll),
             cls("ARMOR", weight_armor),
         ]
-
-
-@dataclass
-class MonsterTemplate:
-    """Template for generating monsters with consistent attributes."""
-    name: str
-    weaknesses: List[Weakness]
-    description: str
-    hp: Optional[int] = None  # If None, use random range
-    strength: Optional[int] = None  # If None, use random range
-    is_boss: bool = False
-
-
-@dataclass
-class ActionOption:
-    """Represents a menu option with its display label and action identifier.
-
-    Attributes:
-        display_label: The text shown to the user in the menu
-        action_id: The identifier used by the code to determine what action to perform
-    """
-    display_label: str
-    action_id: str
 
 
 class GameSystem:
@@ -481,6 +437,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             raise ValueError(f"Invalid selection: {action_choice}")
 
     def _explore_room(self) -> None:
+        ui.print_debug("_explore_room", "_has_all_gear = " + str(self._has_all_gear()))
+        ui.print_debug("_explore_room", "monsters_defeated = " + str(self.monsters_defeated))
+        ui.print_debug("_explore_room", "BOSS_SPAWN_THRESHOLD = " + str(config.BOSS_SPAWN_THRESHOLD))
+        ui.print_debug("_explore_room", "BOSS_SPAWN_CHANCE = " + str(config.BOSS_SPAWN_CHANCE))
         room_type = self._select_random_room_type()
         if room_type == RoomType.EMPTY.value:
             self._generate_narrative(
@@ -507,13 +467,13 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             return
         # Monster room
         # Get the drop for this monster
-        drop = self.drop_calculator.get_drop_for_monster(self.monsters_defeated, self.player)
         # Small chance to encounter the boss after some progress
         if self.monsters_defeated >= config.BOSS_SPAWN_THRESHOLD and self.random_provider.random() < config.BOSS_SPAWN_CHANCE:
             self.current_monster = self.monster_generator.generate_boss()
         else:
             self.current_monster = self.monster_generator.generate_monster()
         # Store the drop on the monster
+        drop = self.drop_calculator.get_drop_for_monster(self.monsters_defeated, self.player)
         self.current_monster.item_drop = drop
         # Generate full narrative encounter description from LLM
         self._generate_narrative(
@@ -680,6 +640,9 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         self._apply_loot(drop)
 
     def _has_all_gear(self) -> bool:
+        ui.print_debug("_has_all_gear", "player.has_shield = " + str(self.player.has_shield))
+        ui.print_debug("_has_all_gear", "player.has_sword = " + str(self.player.has_sword))
+        ui.print_debug("_has_all_gear", "self.player.owned_armor = " + str(self.player.owned_armor))
         """Check if the player has recovered all their stolen gear."""
         all_gear = DropResult.unique_gear()
         if not self.player.has_shield or not self.player.has_sword:

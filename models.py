@@ -28,6 +28,14 @@ class Weakness(Enum):
     HOLY_SMITE = auto()
 
 
+class RoomType(Enum):
+    # OO rationale: Enum for different room types in the dungeon, providing
+    # type safety and preventing magic string errors in room generation.
+    EMPTY = "empty"
+    LOOT = "loot"
+    MONSTER = "monster"
+
+
 class DropResult(Enum):
     # OO rationale: Single source of truth for all drop types (consumables
     # and player's unique stolen gear). Enables centralized probability
@@ -192,3 +200,49 @@ class Monster(Actor):
         if matching_weakness is not None and matching_weakness in self.weaknesses:
             return base_damage + config.WEAKNESS_BONUS_DAMAGE
         return base_damage
+
+
+@dataclass
+class ActionOption:
+    """Represents a menu option with its display label and action identifier.
+
+    OO rationale: Encapsulates UI choice data, separating display concerns
+    from action logic. Enables clean menu generation and selection handling.
+
+    Attributes:
+        display_label: The text shown to the user in the menu
+        action_id: The identifier used by the code to determine what action to perform
+    """
+    display_label: str
+    action_id: str
+
+
+@dataclass
+class MonsterTemplate:
+    """Template for generating monsters with consistent attributes.
+
+    OO rationale: Data model for monster generation, encapsulating all
+    monster attributes in a type-safe structure. Supports both random
+    and fixed attribute generation through optional fields.
+    """
+    name: str
+    weaknesses: List[Weakness]
+    description: str
+    hp: Optional[int] = None  # If None, use random range
+    strength: Optional[int] = None  # If None, use random range
+    is_boss: bool = False
+
+
+@dataclass
+class RoomTypeOption:
+    """Represents a room type with its spawn probability.
+
+    OO rationale: Data model for room configuration, encapsulating
+    room type and weight in a validated structure for room generation.
+    """
+    room_type: RoomType
+    spawn_weight: float
+
+    def __post_init__(self) -> None:
+        if self.spawn_weight < 0:
+            raise ValueError(f"Spawn weight must be non-negative, got {self.spawn_weight}")

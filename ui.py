@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from rich.console import Console, Group
+from rich.console import Console
 from rich.columns import Columns
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+import config
 
 # Global Rich console instance with proper encoding for Windows
 console = Console(force_terminal=True, legacy_windows=False)
@@ -14,7 +16,8 @@ console = Console(force_terminal=True, legacy_windows=False)
 
 def clear_terminal() -> None:
     """Clear the terminal screen using ANSI escape codes (cross-platform)."""
-    print("\033[2J\033[H", end="", flush=True)
+    if not config.DEBUG:
+        print("\033[2J\033[H", end="", flush=True)
 
 
 def display_narrative_panel(text: str, mode: str = "exploration") -> None:
@@ -172,7 +175,7 @@ def prompt_choice(title: str, options: List[str]) -> int:
 
             # Handle exit command
             if user_input.lower() == "x":
-                console.print("Goodbye!")
+                console.print("Story Teller bows and fades away into the mist.")
                 exit(0)
 
             # Handle numeric choice
@@ -183,5 +186,10 @@ def prompt_choice(title: str, options: List[str]) -> int:
 
             console.print("[red]Invalid input. Please enter a valid number or 'x' to exit.[/]")
         except (EOFError, KeyboardInterrupt):
-            console.print("\nGoodbye!")
+            console.print("\nStory Teller vanishes into the mist.")
             exit(0)
+
+def print_debug(caller: str, message: str) -> None:
+    """Print a debug message to the console in yellow."""
+    if config.DEBUG:
+        console.print(f"[yellow]{caller}: {message}[/]")

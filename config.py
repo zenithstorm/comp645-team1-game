@@ -1,6 +1,8 @@
 # Tuning constants for the simple dungeon crawler
 from __future__ import annotations
 
+DEBUG: bool = False
+
 # Player and combat values
 PLAYER_MAX_HEALTH: int = 20
 PLAYER_BASE_STRENGTH: int = 5
