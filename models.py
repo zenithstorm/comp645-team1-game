@@ -246,3 +246,13 @@ class RoomTypeOption:
     def __post_init__(self) -> None:
         if self.spawn_weight < 0:
             raise ValueError(f"Spawn weight must be non-negative, got {self.spawn_weight}")
+
+@dataclass
+class WeightedOption:
+    """A weighted option for random selection with validation."""
+    label: str
+    weight: float
+
+    def __post_init__(self) -> None:
+        if self.weight < 0:
+            raise ValueError(f"Weight must be non-negative, got {self.weight}")

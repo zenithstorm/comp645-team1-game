@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
 from typing import List, Optional, Protocol, Any, Callable
 
 import config
+from drop_calculator import DropCalculator
+from monster_generator import MonsterGenerator
 import ui
 from models import (
     Action,
     ActionOption,
     DropResult,
     Monster,
-    MonsterTemplate,
     Player,
     RoomType,
     RoomTypeOption,
     Weakness,
+    WeightedOption,
 )
 
 
@@ -99,213 +100,6 @@ def select_weighted_random(options: List[WeightedOption], random_provider: Rando
     # If we somehow didn't select anything, return the last option as default
     fallback_option = options[-1]
     return fallback_option.label
-
-class MonsterGenerator:
-    # OO rationale: Factory responsible for building fully-formed Monster
-    # instances from templates. Centralizes variability (names, stats,
-    # weaknesses) and keeps creation logic out of the game loop.
-    """Generates a single monster from a simple in-memory table."""
-
-    def __init__(self, random_provider: RandomProvider) -> None:
-        self.random_provider = random_provider
-        self._templates = [
-            # Regular foes
-            MonsterTemplate(
-                name="Skeleton",
-                weaknesses=[Weakness.HOLY_SMITE],
-                description="A humanoid frame of loose bones held by brittle bindings; light, rattling steps and hollow gaze.",
-            ),
-            MonsterTemplate(
-                name="Goblin Bandit",
-                weaknesses=[Weakness.SWORD_SLASH],
-                description="A small, agile greenskin with oversized ears and quick hands; favors scavenged gear and sudden lunges.",
-            ),
-            MonsterTemplate(
-                name="Giant Rat",
-                weaknesses=[Weakness.SHIELD_BASH],
-                description="An oversized rat with patchy fur and prominent incisors; jittery, low to the ground, always testing distance.",
-            ),
-            MonsterTemplate(
-                name="Wraith",
-                weaknesses=[Weakness.HOLY_SMITE],
-                description="A dim, humanoid outline woven from chill mist; light fades and warmth thins in its presence.",
-            ),
-        ]
-
-    def generate_monster(self, monsters_defeated: int) -> Monster:
-        """Generate a monster based on current game progress.
-
-        Args:
-            monsters_defeated: Number of monsters defeated so far
-
-        Returns:
-            Monster instance (regular monster or boss based on game progress)
-        """
-        # Check if boss should spawn based on progress
-        if (monsters_defeated >= config.BOSS_SPAWN_THRESHOLD and
-            self.random_provider.random() < config.BOSS_SPAWN_CHANCE):
-            return self._create_boss()
-        else:
-            return self._create_regular_monster()
-
-    def _create_regular_monster(self) -> Monster:
-        """Create a regular monster from templates."""
-        monster_template = self.random_provider.choice(self._templates)
-        max_health_points = monster_template.hp or self.random_provider.randint(
-            config.MONSTER_HEALTH_MIN, config.MONSTER_HEALTH_MAX
-        )
-        attack_strength = monster_template.strength or self.random_provider.randint(
-            config.MONSTER_STRENGTH_MIN, config.MONSTER_STRENGTH_MAX
-        )
-        return Monster(
-            max_health=max_health_points,
-            strength=attack_strength,
-            name=monster_template.name,
-            weaknesses=list(monster_template.weaknesses),
-            description=monster_template.description,
-            is_boss=monster_template.is_boss,
-        )
-
-    def _create_boss(self) -> Monster:
-        """Create the end-game boss monster."""
-        # Single end-of-run boss
-        boss_template = MonsterTemplate(
-            name="Grave Tyrant",
-            weaknesses=[],
-            description=(
-                "An armored lich-king draped in funereal banners. A corroded crown sits on a skull carved with runes; "
-                "a great blade of black iron rests across its lap. Plates of ornate mail are missing in places, "
-                "revealing ribs choked with grave dust. Clutched in its skeletal grasp, the Heart of Radiance pulses "
-                "with a faint, struggling light—the sacred relic you came to reclaim, its divine radiance dimmed but "
-                "not extinguished by the creature's dark presence."
-            ),
-            hp=config.BOSS_HP,
-            strength=config.BOSS_STRENGTH,
-            is_boss=True,
-        )
-        # Use the template values directly (no randomization for boss)
-        return Monster(
-            max_health=boss_template.hp,
-            strength=boss_template.strength,
-            name=boss_template.name,
-            weaknesses=list(boss_template.weaknesses),
-            description=boss_template.description,
-            is_boss=boss_template.is_boss,
-        )
-
-class DropCalculator:
-    # OO rationale: Encapsulates loot rules and unique item availability.
-    # This isolates drop probability and uniqueness constraints from combat
-    # flow, making it easy to tune or swap strategies.
-    """Handles loot generation with unique armor pieces and scripted gear recovery."""
-
-    def __init__(self, random_provider: RandomProvider) -> None:
-        self.random_provider = random_provider
-        # Track all unique gear that can still drop (shield, sword, and armor pieces)
-        self._remaining_gear: List[DropResult] = list(DropResult.unique_gear())
-
-    def get_drop_for_monster(self, defeated_count: int, player: Player) -> DropResult:
-        """Get the drop for a monster encounter (guaranteed progression items or random drop).
-
-        Checks for guaranteed progression items (shield/sword) first, then falls back
-        to a random drop if no guaranteed item is due.
-
-        Args:
-            defeated_count: Number of monsters defeated so far
-            player: Player instance to check current equipment
-
-        Returns:
-            DropResult for the item that will drop
-        """
-        # Check for guaranteed progression items first
-        # Shield guaranteed on 1st monster (defeated_count will be 1 after this fight)
-        if defeated_count == 0 and not player.has_shield and DropResult.SHIELD in self._remaining_gear:
-            self._remaining_gear.remove(DropResult.SHIELD)
-            return DropResult.SHIELD
-        # Sword guaranteed on 3rd monster (defeated_count will be 3 after this fight)
-        if defeated_count == 2 and not player.has_sword and DropResult.SWORD in self._remaining_gear:
-            self._remaining_gear.remove(DropResult.SWORD)
-            return DropResult.SWORD
-        # Otherwise, roll for a random drop (but exclude shield/sword if already dropped)
-        return self.roll_item_drop(player)
-
-    def roll_item_drop(self, player: Player) -> DropResult:
-        """Roll for a random item drop, excluding unique items that have already been dropped.
-
-        Args:
-            player: Player instance to check current equipment (for defensive checks)
-        """
-
-        # Check if any gear (armor pieces) remain
-        # Filter _remaining_gear to get only armor pieces (exclude shield and sword)
-        remaining_armor = [item for item in self._remaining_gear if item not in (DropResult.SHIELD, DropResult.SWORD)]
-
-        # Create loot buckets using the factory method
-        loot_buckets = LootBucket.create_buckets(player, remaining_armor)
-
-        # Convert to WeightedOption for selection
-        weighted_options = [WeightedOption(bucket.category, bucket.weight) for bucket in loot_buckets]
-        chosen_bucket = select_weighted_random(weighted_options, self.random_provider)
-
-        # Map bucket names to DropResult values
-        bucket_to_drop = {
-            "NO_ITEM": DropResult.NO_ITEM,
-            "HEALTH_POTION": DropResult.HEALTH_POTION,
-            "ESCAPE_SCROLL": DropResult.ESCAPE_SCROLL,
-        }
-
-        if chosen_bucket in bucket_to_drop:
-            return bucket_to_drop[chosen_bucket]
-
-        if chosen_bucket == "ARMOR" and remaining_armor:
-            armor_piece = self.random_provider.choice(remaining_armor)
-            self._remaining_gear.remove(armor_piece)
-            return armor_piece
-        return DropResult.NO_ITEM
-
-@dataclass
-class WeightedOption:
-    """A weighted option for random selection with validation."""
-    label: str
-    weight: float
-
-    def __post_init__(self) -> None:
-        if self.weight < 0:
-            raise ValueError(f"Weight must be non-negative, got {self.weight}")
-
-
-@dataclass
-class LootBucket:
-    """Represents a loot category with its drop probability."""
-    category: str  # Will map to DropResult enum values
-    weight: float
-
-    def __post_init__(self) -> None:
-        if self.weight < 0:
-            raise ValueError(f"Weight must be non-negative, got {self.weight}")
-
-    @classmethod
-    def create_buckets(cls, player: 'Player', remaining_armor: List['DropResult']) -> List['LootBucket']:
-        """Factory method to create all loot buckets with proper weights."""
-        from models import DropResult
-
-        # Build base weights from config
-        weight_no_item = config.DROP_WEIGHTS["NO_ITEM"]
-        weight_health_potion = config.DROP_WEIGHTS["HEALTH_POTION"]
-        weight_escape_scroll = config.DROP_WEIGHTS["ESCAPE_SCROLL"]
-        weight_armor = config.DROP_WEIGHTS["ARMOR"] if remaining_armor else 0.0
-
-        # If no armor remains, redistribute armor weight to 'no item'
-        if not remaining_armor:
-            weight_no_item += config.DROP_WEIGHTS["ARMOR"]
-
-        return [
-            cls("NO_ITEM", weight_no_item),
-            cls("HEALTH_POTION", weight_health_potion),
-            cls("ESCAPE_SCROLL", weight_escape_scroll),
-            cls("ARMOR", weight_armor),
-        ]
-
 
 class GameSystem:
     # OO rationale: Orchestrator and state machine for the game flow. It
@@ -455,10 +249,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             raise ValueError(f"Invalid selection: {action_choice}")
 
     def _explore_room(self) -> None:
-        ui.print_debug("_explore_room", "_has_all_gear = " + str(self._has_all_gear()))
         ui.print_debug("_explore_room", "monsters_defeated = " + str(self.monsters_defeated))
-        ui.print_debug("_explore_room", "BOSS_SPAWN_THRESHOLD = " + str(config.BOSS_SPAWN_THRESHOLD))
-        ui.print_debug("_explore_room", "BOSS_SPAWN_CHANCE = " + str(config.BOSS_SPAWN_CHANCE))
         room_type = self._select_random_room_type()
         if room_type == RoomType.EMPTY.value:
             self._generate_narrative(
