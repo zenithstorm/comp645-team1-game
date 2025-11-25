@@ -119,7 +119,9 @@ class Player(Actor):
     has_sword: bool = False   # unlocks after third monster fight
 
     def get_defense(self) -> int:
-        return self.base_defense + len(self.owned_armor) * config.ARMOR_DEFENSE_BONUS_PER_PIECE
+        defense_from_armor = len(self.owned_armor) * config.ARMOR_DEFENSE_BONUS_PER_PIECE
+        defense_from_shield = 3 if self.has_shield else 0
+        return self.base_defense + defense_from_armor + defense_from_shield
 
     def add_armor_piece(self, armor_piece: DropResult) -> None:
         """Add an armor piece to the player's owned armor set."""
