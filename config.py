@@ -46,6 +46,3 @@ DROP_WEIGHTS = {
     "ESCAPE_SCROLL": 0.1,
     "ARMOR": 0.3, # If there are no more armor drops, this weight is added to NO_ITEM
 }
-
-# Typewriter delay
-TYPEWRITER_DELAY: float = 0.05 # 0.05 looks good, set to 0 for instant printing

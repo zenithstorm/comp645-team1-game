@@ -320,9 +320,6 @@ class GameSystem:
         # Clear terminal before showing new narrative
         ui.clear_terminal()
 
-        # Show mode header before narrative
-        ui.show_mode_header(mode)
-
         print("Story Teller is thinking...", end="", flush=True)
         try:
             narrative_text = narrative_generator()

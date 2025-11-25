@@ -10,26 +10,13 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-# Global Rich console instance
-console = Console()
+# Global Rich console instance with proper encoding for Windows
+console = Console(force_terminal=True, legacy_windows=False)
 
 
 def clear_terminal() -> None:
     """Clear the terminal screen using ANSI escape codes (cross-platform)."""
     print("\033[2J\033[H", end="", flush=True)
-
-
-def typewriter_print(text: str) -> None:
-    """Print text with a typewriter effect (character by character).
-
-    Args:
-        text: The text to print
-    """
-    for char in text:
-        print(char, end="", flush=True)
-        if char != " ":  # Faster for spaces
-            time.sleep(config.TYPEWRITER_DELAY)
-    print()  # Newline at the end
 
 
 def display_narrative_panel(text: str, mode: str = "exploration") -> None:
@@ -47,23 +34,10 @@ def display_narrative_panel(text: str, mode: str = "exploration") -> None:
         border_style = "white"
         title = "EXPLORATION"
 
-    # For now, we'll use typewriter effect outside the panel, then show the panel
-    # This is a compromise until we find a better UI solution
-    typewriter_print(text)
-
-    # Create and display the panel with the full text
+    # Create and display the panel directly (no typewriter effect)
     panel = Panel(text, title=title, border_style=border_style, padding=(1, 2))
+    console.print()  # Add some spacing
     console.print(panel)
-
-
-def show_mode_header(mode: str = "exploration") -> None:
-    """Show padding before narrative (no longer shows rule - title is on panel now).
-
-    Args:
-        mode: Either "exploration" or "combat" (default: "exploration")
-    """
-    # Add some padding before the narrative panel
-    console.print()
 
 
 def render_status(player, mode: str = "exploration", enemy: Optional = None) -> None:
@@ -101,139 +75,115 @@ def _render_exploration_status(player) -> None:
         hp_text.append(current_hp_str, style="bold red")
     hp_text.append(f"/{player.max_health}")
 
-    # Build left panel (Stats)
-    stats_table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1))
-    stats_table.add_row(hp_text)
-    stats_table.add_row(f"Defense: {player.get_defense()}")
+    # Left column: Stats and Consumables
+    stats_table = Table.grid(padding=(0, 2))
+    stats_table.add_column(justify="left")
+    stats_table.add_column(justify="left")
 
-    consumables_table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1))
-    consumables_table.add_row(f"Potions: {player.inventory.num_potions}")
-    consumables_table.add_row(f"Scrolls: {player.inventory.num_escape_scrolls}")
+    stats_table.add_row(hp_text, "")
+    stats_table.add_row("Defense:", str(player.get_defense()))
+    stats_table.add_row("")  # Spacing
+    stats_table.add_row("[bold]Consumables[/]", "")
+    stats_table.add_row("Potions:", str(player.inventory.num_potions))
+    stats_table.add_row("Scrolls:", str(player.inventory.num_escape_scrolls))
 
-    left_content = Group(
-        Text("Stats", style="bold"),
-        stats_table,
-        Text(""),  # Blank line
-        Text("Consumables", style="bold"),
-        consumables_table,
-    )
+    # Right column: Equipment
+    equipment_table = Table.grid(padding=(0, 2))
+    equipment_table.add_column(justify="left")
+    equipment_table.add_column(justify="left")
 
-    # Build right panel (Equipment)
-    equipment_map = [
-        ("Helm", DropResult.HELM),
-        ("Shoulders", DropResult.PAULDRONS),
-        ("Chest", DropResult.CUIRASS),
-        ("Legs", DropResult.LEG_GUARDS),
-        ("Boots", DropResult.BOOTS),
-        ("Sword", None),
-        ("Shield", None),
+    equipment_table.add_row("[bold]Equipment[/]", "")
+
+    # Check individual armor pieces
+    has_helm = DropResult.HELM in player.owned_armor
+    has_pauldrons = DropResult.PAULDRONS in player.owned_armor
+    has_cuirass = DropResult.CUIRASS in player.owned_armor
+    has_gauntlets = DropResult.GAUNTLETS in player.owned_armor
+
+    equipment_items = [
+        ("Helm:", has_helm),
+        ("Pauldrons:", has_pauldrons),
+        ("Cuirass:", has_cuirass),
+        ("Gauntlets:", has_gauntlets),
+        ("Sword:", player.has_sword),
+        ("Shield:", player.has_shield),
     ]
 
-    equipment_table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1))
-    for display_name, drop_result in equipment_map:
-        if drop_result is None:
-            # Handle sword and shield separately
-            if display_name == "Sword":
-                has_item = player.has_sword
-            else:  # Shield
-                has_item = player.has_shield
-        else:
-            has_item = drop_result in player.owned_armor
-
+    for item_name, has_item in equipment_items:
         if has_item:
-            status_text = Text("equipped", style="bold green")
+            equipment_table.add_row(item_name, "[bold green]equipped[/]")
         else:
-            status_text = Text("—", style="dim")
+            equipment_table.add_row(item_name, "[dim]—[/]")
 
-        # Create row text: "Name: status"
-        row_text = Text()
-        row_text.append(f"{display_name}: ")
-        row_text.append(status_text)
-        equipment_table.add_row(row_text)
-
-    right_content = Group(
-        Text("Equipment", style="bold"),
-        equipment_table,
-    )
-
-    # Create two-column layout
-    columns = Columns([left_content, right_content], equal=True, expand=True)
-
-    # Create panel with STATUS title
-    panel = Panel(columns, title="STATUS", border_style="dim")
-
-    # Print directly using Rich console
+    # Combine in columns
+    content = Columns([stats_table, equipment_table], equal=True, expand=True)
+    panel = Panel(content, title="STATUS")
     console.print(panel)
 
 
 def _render_combat_status(player, enemy) -> None:
-    """Render the focused combat status with HP, Defense, and Enemy info."""
+    """Render the focused combat status for battle."""
     # Calculate HP percentage and determine color
     hp_percentage = (player.health / player.max_health) * 100 if player.max_health > 0 else 0
-    current_hp_str = str(player.health)
 
     # Create HP text with color based on percentage
     hp_text = Text()
-    hp_text.append("HP:      ")
+    hp_text.append("HP:  ")
     if hp_percentage >= 75:
-        hp_text.append(current_hp_str, style="bold green")
+        hp_text.append(str(player.health), style="bold green")
     elif hp_percentage >= 50:
-        hp_text.append(current_hp_str, style="bold yellow")
+        hp_text.append(str(player.health), style="bold yellow")
     else:
-        hp_text.append(current_hp_str, style="bold red")
+        hp_text.append(str(player.health), style="bold red")
     hp_text.append(f"/{player.max_health}")
 
-    # Create combat status table
-    battle_table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1))
-    battle_table.add_row("")  # Empty line at top
-    battle_table.add_row(hp_text)
-    battle_table.add_row(f"Defense: {player.get_defense()}")
-    battle_table.add_row("")  # Empty line
+    # Combat status table
+    combat_table = Table.grid(padding=(0, 1))
+    combat_table.add_column(justify="left")
+    combat_table.add_column(justify="left")
 
-    # Add enemy info if available
+    combat_table.add_row(hp_text, "")
+    combat_table.add_row("Defense:", str(player.get_defense()))
+    combat_table.add_row("")  # Spacing
     if enemy:
-        battle_table.add_row(f"Enemy:   {enemy.name}")
-    else:
-        battle_table.add_row("Enemy:   Unknown")
+        combat_table.add_row("Enemy:", enemy.name)
 
-    battle_table.add_row("")  # Empty line at bottom
-
-    # Create panel with BATTLE STATUS title
-    panel = Panel(battle_table, title="BATTLE STATUS")
-
-    # Print directly using Rich console
+    panel = Panel(combat_table, title="BATTLE STATUS")
     console.print(panel)
 
 
 def prompt_choice(title: str, options: List[str]) -> int:
-    """Prompt user to choose from numbered options; returns zero-based index."""
-    import sys
+    """Prompt the user to choose from a list of options.
 
-    lines = [title] + [f"{idx + 1}) {opt}" for idx, opt in enumerate(options)]
-    print("\n".join(lines), flush=True)
+    Args:
+        title: The prompt title to display
+        options: List of option strings to choose from
+
+    Returns:
+        The index of the selected option (0-based)
+    """
+    # Display the title and options
+    console.print(f"\n[bold]{title}[/]")
+    for idx, option in enumerate(options):
+        console.print(f"{idx + 1}) {option}")
+
+    # Get user input
     while True:
-        sys.stdout.write("> ")
-        sys.stdout.flush()
         try:
-            # Try reading from stdin directly as a workaround for Git Bash issues
-            user_input = sys.stdin.readline()
-            if not user_input:
-                raise EOFError("End of input")
-            user_input = user_input.strip()
-        except (EOFError, KeyboardInterrupt) as e:
-            raise
-        except Exception as e:
-            print(f"Error reading input: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
-            raise
-        if user_input.lower() == "x":
-            print("Story Teller bows and ends the game...", flush=True)
-            import sys
-            sys.exit(0)
-        if user_input.isdigit():
-            choice_number = int(user_input)
-            if 1 <= choice_number <= len(options):
-                selected_index = choice_number - 1
-                return selected_index
-        print("Invalid input. Please enter a valid number.", flush=True)
+            user_input = input("> ").strip()
+
+            # Handle exit command
+            if user_input.lower() == "x":
+                console.print("Goodbye!")
+                exit(0)
+
+            # Handle numeric choice
+            if user_input.isdigit():
+                choice_number = int(user_input)
+                if 1 <= choice_number <= len(options):
+                    return choice_number - 1
+
+            console.print("[red]Invalid input. Please enter a valid number or 'x' to exit.[/]")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\nGoodbye!")
+            exit(0)
