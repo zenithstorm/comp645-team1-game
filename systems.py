@@ -112,17 +112,17 @@ class MonsterGenerator:
             # Regular foes
             MonsterTemplate(
                 name="Skeleton",
-                weaknesses=[Weakness.HOLY_SMITE, Weakness.SHIELD_BASH],
+                weaknesses=[Weakness.HOLY_SMITE],
                 description="A humanoid frame of loose bones held by brittle bindings; light, rattling steps and hollow gaze.",
             ),
             MonsterTemplate(
                 name="Goblin Bandit",
-                weaknesses=[Weakness.SWORD_SLASH, Weakness.SHIELD_BASH],
+                weaknesses=[Weakness.SWORD_SLASH],
                 description="A small, agile greenskin with oversized ears and quick hands; favors scavenged gear and sudden lunges.",
             ),
             MonsterTemplate(
                 name="Giant Rat",
-                weaknesses=[Weakness.SWORD_SLASH],
+                weaknesses=[Weakness.SHIELD_BASH],
                 description="An oversized rat with patchy fur and prominent incisors; jittery, low to the ground, always testing distance.",
             ),
             MonsterTemplate(
