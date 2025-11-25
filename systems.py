@@ -6,6 +6,7 @@ from typing import List, Optional, Protocol, Any, Callable
 import config
 from drop_calculator import DropCalculator
 from monster_generator import MonsterGenerator
+from narrative_engine import NarrativeEngine
 import ui
 from models import (
     Action,
@@ -47,6 +48,7 @@ class GameSystem:
             storyteller: StoryTeller implementation (typically LLMStoryTeller)
         """
         self.storyteller: StoryTellerProtocol = storyteller
+        self.narrative_engine = NarrativeEngine(storyteller)
         self.random_provider: RandomProvider = DefaultRandomProvider()
         self.player = Player(
             max_health=config.PLAYER_MAX_HEALTH,
@@ -61,64 +63,9 @@ class GameSystem:
         self.monsters_defeated: int = 0
         self.game_won: bool = False
 
-    def _generate_narrative(
-        self,
-        narrative_generator: Callable[[], str],
-        event_type: Optional[str],
-        mode: str = "exploration"
-    ) -> None:
-        """Generate narrative text with loading indicator and error handling.
-
-        Args:
-            narrative_generator: A callable that returns the narrative description string
-            event_type: Type of event to track (e.g., "encounter", "victory", "loot") or None to skip tracking
-            mode: UI mode for header display ("exploration" or "combat")
-        """
-        ui.clear_terminal()
-
-        print("Story Teller is thinking...", end="", flush=True)
-        try:
-            narrative_text = narrative_generator()
-            print("\r" + " " * 30 + "\r", end="", flush=True)
-            if event_type:
-                self.storyteller.track_event(event_type, narrative_text)
-            ui.display_narrative_panel(narrative_text, mode)
-        except Exception as e:
-            print()
-            print(f"Error generating description: {e}", flush=True)
-            print("The game cannot continue without the Story Teller. Exiting...", flush=True)
-            import sys
-            sys.exit(1)
-
-    def _format_item_name(self, item: DropResult) -> Optional[str]:
-        """Format a DropResult item name for narrative display.
-
-        Args:
-            item: The DropResult item (or None/NO_ITEM for no item)
-
-        Returns:
-            Formatted item name (e.g., "a shield", "health potion") or None if no item
-        """
-        if item is None or item == DropResult.NO_ITEM:
-            return None
-        if item == DropResult.SHIELD:
-            return "a shield"
-        if item == DropResult.SWORD:
-            return "a sword"
-        return item.name.replace("_", " ").lower()
 
     def start_game(self) -> None:
-        opening_text = """You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
-
-Faint torchlight flickers across toppled pillars and shattered glass — the remnants of the old sanctum where you had just retrieved the Heart of Radiance, a sacred relic.
-
-You remember now: the attack came at dusk. A pack of goblin bandits ambushed you, stole your gear, shattered your enchanted map, and stole the Heart of Radiance... then left you for dead.
-
-Without the map's guiding spell, the sanctum's halls — once woven with radiant wards to conceal the relic — now twist and shift at random. Each step forward reshapes the labyrinth anew.
-
-Echoing goblin screams from the labyrinth below tell you where they fled to hide, but in doing so, they awakened creatures far worse.
-
-Weak but alive, you feel the quiet warmth of your connection to the Light. It has not abandoned you. Not yet."""
+        opening_text = self.narrative_engine.describe_opening()
         self.storyteller.track_event("game_start", opening_text)
         # Clear terminal and show opening narrative
         ui.clear_terminal()
@@ -137,7 +84,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 else:
                     ui.render_status(self.player)  # Back to exploration after combat ends
         if self.game_won:
-            victory_text = "The last foe falls; somewhere, an exit reveals itself."
+            victory_text = self.narrative_engine.describe_victory_ending()
             self.storyteller.track_event("game_victory", victory_text)
             print(victory_text, flush=True)
 
@@ -156,18 +103,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         if action_choice == "proceed":
             self._explore_room()
         elif action_choice == "pray":
-            self._generate_narrative(
-                lambda: self.storyteller.describe_pray(self.player),
-                None,  # Don't track prayer as a significant event
-                "exploration"
-            )
+            self.narrative_engine.generate_prayer(self.player)
             self.player.pray_for_restoration()
         elif action_choice == "potion":
-            self._generate_narrative(
-                lambda: self.storyteller.describe_potion_use(self.player),
-                None,  # Don't track potion use as a significant event
-                "exploration"
-            )
+            self.narrative_engine.generate_potion_use(self.player, "exploration")
         else:
             raise ValueError(f"Invalid selection: {action_choice}")
 
@@ -175,25 +114,11 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         ui.print_debug("_explore_room", "monsters_defeated = " + str(self.monsters_defeated))
         room_type = self._select_random_room_type()
         if room_type == RoomType.EMPTY.value:
-            self._generate_narrative(
-                lambda: self.storyteller.describe_empty_room(),
-                None,  # Don't track empty rooms as significant events
-                "exploration"
-            )
+            self.narrative_engine.generate_empty_room()
             return
         if room_type == RoomType.LOOT.value:
             drop = self.drop_calculator.roll_item_drop(self.player)
-            # Generate narrative description of finding the loot
-            def get_loot_description():
-                if drop == DropResult.NO_ITEM:
-                    return self.storyteller.describe_empty_room()
-                return self.storyteller.describe_loot_find(drop, self.player)
-
-            self._generate_narrative(
-                get_loot_description,
-                "loot",
-                "exploration"
-            )
+            self.narrative_engine.generate_loot_find(drop, self.player)
             # Apply the loot after showing the description
             self._apply_loot(drop)
             return
@@ -205,16 +130,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         drop = self.drop_calculator.get_drop_for_monster(self.monsters_defeated, self.player)
         self.current_monster.item_drop = drop
         # Generate full narrative encounter description from LLM
-        self._generate_narrative(
-            lambda: self.storyteller.describe_encounter(
-                self.current_monster.name,
-                self.current_monster.description,
-                drop if drop != DropResult.NO_ITEM else None,
-                self.player
-            ),
-            "encounter",
-            "combat"
-        )
+        self.narrative_engine.generate_encounter(self.current_monster, drop, self.player)
 
     def _select_random_room_type(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS
@@ -244,18 +160,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             selected_index = ui.prompt_choice("⚔️ In battle, choose your action:", action_labels)
             selected_action = available_actions[selected_index]
             if selected_action == Action.USE_POTION:
-                self._generate_narrative(
-                    lambda: self.storyteller.describe_potion_use(self.player),
-                    None,  # Don't track potion use as a significant event
-                    "combat"
-                )
+                self.narrative_engine.generate_potion_use(self.player)
             elif selected_action == Action.FLEE:
                 flee_succeeded = self.player.attempt_flee(self.random_provider.random)
-                self._generate_narrative(
-                    lambda: self.storyteller.describe_flee(flee_succeeded, self.current_monster.name),
-                    "flee",
-                    "combat"
-                )
+                self.narrative_engine.generate_flee_attempt(flee_succeeded, self.current_monster.name)
                 if flee_succeeded:
                     self.current_monster = None
                     return
@@ -290,19 +198,14 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                     return
                 else:
                     # Monster survived - describe the complete turn (player action + monster retaliation)
-                    self._generate_narrative(
-                        lambda: self.storyteller.describe_combat_turn(
-                            self._get_action_label(selected_action),
-                            self.current_monster.name,
-                            self.current_monster.description,
-                            damage_dealt,
-                            is_weakness,
-                            self.player,
-                            monster_retaliation_damage=monster_retaliation_damage,
-                            player_health_after=player_health_after
-                        ),
-                        "combat",
-                        "combat"
+                    self.narrative_engine.generate_combat_turn(
+                        self._get_action_label(selected_action),
+                        self.current_monster,
+                        damage_dealt,
+                        is_weakness,
+                        self.player,
+                        monster_retaliation_damage=monster_retaliation_damage,
+                        player_health_after=player_health_after
                     )
             if self.player.is_alive():
                 ui.render_status(self.player, mode="combat", enemy=self.current_monster)
@@ -341,22 +244,17 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             final_action: The action that killed the monster
             is_weakness: Whether the final action was a weakness hit
         """
-        item_name = self._format_item_name(monster.item_drop)
+        item_name = self.narrative_engine.format_item_name(monster.item_drop)
 
         # If we know the final action, include it in the victory description
         action_label = self._get_action_label(final_action) if final_action else None
 
-        self._generate_narrative(
-            lambda: self.storyteller.describe_victory(
-                monster.name,
-                monster.description,
-                item_name,
-                self.player,
-                final_action=action_label,
-                is_weakness=is_weakness
-            ),
-            "victory",
-            "combat"
+        self.narrative_engine.generate_victory(
+            monster,
+            item_name,
+            self.player,
+            final_action=action_label,
+            is_weakness=is_weakness
         )
 
         # If boss is defeated, end the run with victory.
@@ -408,8 +306,4 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         was_complete_before = self._has_all_gear()
         self.player.add_armor_piece(drop)
         if not was_complete_before and self._has_all_gear():
-            self._generate_narrative(
-                lambda: self.storyteller.describe_all_gear_recovered(self.player),
-                None,
-                "exploration"
-            )
+            self.narrative_engine.generate_all_gear_recovered(self.player)
