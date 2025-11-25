@@ -132,7 +132,24 @@ class MonsterGenerator:
             ),
         ]
 
-    def generate_monster(self) -> Monster:
+    def generate_monster(self, monsters_defeated: int) -> Monster:
+        """Generate a monster based on current game progress.
+
+        Args:
+            monsters_defeated: Number of monsters defeated so far
+
+        Returns:
+            Monster instance (regular monster or boss based on game progress)
+        """
+        # Check if boss should spawn based on progress
+        if (monsters_defeated >= config.BOSS_SPAWN_THRESHOLD and
+            self.random_provider.random() < config.BOSS_SPAWN_CHANCE):
+            return self._create_boss()
+        else:
+            return self._create_regular_monster()
+
+    def _create_regular_monster(self) -> Monster:
+        """Create a regular monster from templates."""
         monster_template = self.random_provider.choice(self._templates)
         max_health_points = monster_template.hp or self.random_provider.randint(
             config.MONSTER_HEALTH_MIN, config.MONSTER_HEALTH_MAX
@@ -149,7 +166,8 @@ class MonsterGenerator:
             is_boss=monster_template.is_boss,
         )
 
-    def generate_boss(self) -> Monster:
+    def _create_boss(self) -> Monster:
+        """Create the end-game boss monster."""
         # Single end-of-run boss
         boss_template = MonsterTemplate(
             name="Grave Tyrant",
@@ -466,13 +484,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             self._apply_loot(drop)
             return
         # Monster room
+        # Generate monster based on current progress (handles boss spawning internally)
+        self.current_monster = self.monster_generator.generate_monster(self.monsters_defeated)
+
         # Get the drop for this monster
-        # Small chance to encounter the boss after some progress
-        if self.monsters_defeated >= config.BOSS_SPAWN_THRESHOLD and self.random_provider.random() < config.BOSS_SPAWN_CHANCE:
-            self.current_monster = self.monster_generator.generate_boss()
-        else:
-            self.current_monster = self.monster_generator.generate_monster()
-        # Store the drop on the monster
         drop = self.drop_calculator.get_drop_for_monster(self.monsters_defeated, self.player)
         self.current_monster.item_drop = drop
         # Generate full narrative encounter description from LLM
