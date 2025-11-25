@@ -48,4 +48,4 @@ DROP_WEIGHTS = {
 }
 
 # Typewriter delay
-TYPEWRITER_DELAY: float = 0.00 # 0.05 looks good, set to 0 for instant printing
+TYPEWRITER_DELAY: float = 0.05 # 0.05 looks good, set to 0 for instant printing

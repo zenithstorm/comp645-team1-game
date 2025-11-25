@@ -329,16 +329,8 @@ class GameSystem:
             print("\r" + " " * 30 + "\r", end="", flush=True)
             if event_type:
                 self.storyteller.track_event(event_type, narrative_text)
-            # Print narrative with typewriter effect
-            ui.typewriter_print(narrative_text)
-            # Add subtle separator after narrative for visual clarity
-            try:
-                import shutil
-                terminal_width = shutil.get_terminal_size().columns
-            except (OSError, AttributeError):
-                terminal_width = 80
-            print("─" * terminal_width, flush=True)
-            print()
+            # Display narrative in a Rich panel
+            ui.display_narrative_panel(narrative_text, mode)
         except Exception as e:
             print()
             print(f"Error generating description: {e}", flush=True)
@@ -378,7 +370,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         self.storyteller.track_event("game_start", opening_text)
         # Clear terminal and show opening narrative
         ui.clear_terminal()
-        ui.typewriter_print(opening_text)
+        ui.display_narrative_panel(opening_text, mode="exploration")
         ui.render_status(self.player)  # Initial status in exploration mode
         while self.player.is_alive() and not self.game_won:
             if self.current_monster is None:

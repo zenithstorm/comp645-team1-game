@@ -32,21 +32,37 @@ def typewriter_print(text: str) -> None:
     print()  # Newline at the end
 
 
+def display_narrative_panel(text: str, mode: str = "exploration") -> None:
+    """Display narrative text in a Rich panel with mode-appropriate styling.
+
+    Args:
+        text: The narrative text to display
+        mode: Either "exploration" or "combat" for styling
+    """
+    # Choose border color and title based on mode
+    if mode == "combat":
+        border_style = "yellow"
+        title = "⚔ COMBAT! ⚔"
+    else:
+        border_style = "white"
+        title = "EXPLORATION"
+
+    # For now, we'll use typewriter effect outside the panel, then show the panel
+    # This is a compromise until we find a better UI solution
+    typewriter_print(text)
+
+    # Create and display the panel with the full text
+    panel = Panel(text, title=title, border_style=border_style, padding=(1, 2))
+    console.print(panel)
+
+
 def show_mode_header(mode: str = "exploration") -> None:
-    """Show the mode header rule with padding.
+    """Show padding before narrative (no longer shows rule - title is on panel now).
 
     Args:
         mode: Either "exploration" or "combat" (default: "exploration")
     """
-    # Add some padding before the rule
-    console.print()
-
-    if mode == "combat":
-        console.rule("⚔ COMBAT! ⚔")
-    else:
-        console.rule("EXPLORATION")
-
-    # Add padding after the rule
+    # Add some padding before the narrative panel
     console.print()
 
 
@@ -183,7 +199,7 @@ def _render_combat_status(player, enemy) -> None:
     battle_table.add_row("")  # Empty line at bottom
 
     # Create panel with BATTLE STATUS title
-    panel = Panel(battle_table, title="BATTLE STATUS", border_style="red")
+    panel = Panel(battle_table, title="BATTLE STATUS")
 
     # Print directly using Rich console
     console.print(panel)
@@ -212,7 +228,7 @@ def prompt_choice(title: str, options: List[str]) -> int:
             traceback.print_exc()
             raise
         if user_input.lower() == "x":
-            print("Exiting game...", flush=True)
+            print("Story Teller bows and ends the game...", flush=True)
             import sys
             sys.exit(0)
         if user_input.isdigit():
