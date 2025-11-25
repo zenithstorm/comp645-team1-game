@@ -4,6 +4,7 @@ import random
 from typing import List, Optional, Protocol, Any, Callable
 
 import config
+from combat_engine import CombatEngine
 from drop_calculator import DropCalculator
 from monster_generator import MonsterGenerator
 from narrative_engine import NarrativeEngine
@@ -34,13 +35,6 @@ class GameSystem:
     # delegating specialized behavior to collaborators.
     """Main orchestrator for exploration and combat."""
 
-    # Action to weakness mapping (used for combat calculations)
-    ACTION_TO_WEAKNESS = {
-        Action.HOLY_SMITE: Weakness.HOLY_SMITE,
-        Action.SWORD_SLASH: Weakness.SWORD_SLASH,
-        Action.SHIELD_BASH: Weakness.SHIELD_BASH,
-    }
-
     def __init__(self, storyteller: StoryTellerProtocol) -> None:
         """Initialize GameSystem with a StoryTeller (required).
 
@@ -50,6 +44,7 @@ class GameSystem:
         self.storyteller: StoryTellerProtocol = storyteller
         self.narrative_engine = NarrativeEngine(storyteller)
         self.random_provider: RandomProvider = DefaultRandomProvider()
+        self.combat_engine = CombatEngine(self.narrative_engine, self.random_provider)
         self.player = Player(
             max_health=config.PLAYER_MAX_HEALTH,
             strength=config.PLAYER_BASE_STRENGTH,
@@ -149,117 +144,30 @@ class GameSystem:
     # =====================
     def _combat_phase(self) -> None:
         assert self.current_monster is not None
-        while self.player.is_alive() and self.current_monster.is_alive():
-            available_actions = self._get_available_combat_actions()
-            action_labels = [self._get_action_label(action) for action in available_actions]
-            selected_index = ui.prompt_choice("⚔️ In battle, choose your action:", action_labels)
-            selected_action = available_actions[selected_index]
-            if selected_action == Action.USE_POTION:
-                self.narrative_engine.describe_potion_use(self.player)
-            elif selected_action == Action.FLEE:
-                flee_succeeded = self.player.attempt_flee(self.random_provider.random)
-                self.narrative_engine.describe_flee_attempt(flee_succeeded, self.current_monster.name)
-                if flee_succeeded:
-                    self.current_monster = None
-                    return
-            else:
-                # Combat action (Holy Smite, Shield Bash, Sword Slash)
-                ability_map = self.player.abilities()
-                base_damage = ability_map[selected_action]()
-                final_damage = self._calculate_player_damage(selected_action, self.current_monster)
-                # Check if it's a weakness hit
-                matching_weakness = self.ACTION_TO_WEAKNESS.get(selected_action)
-                is_weakness = (matching_weakness is not None and
-                              matching_weakness in self.current_monster.weaknesses and
-                              final_damage > base_damage)
-                # Apply player damage
-                damage_dealt = self.current_monster.take_damage(final_damage)
-                monster_died = not self.current_monster.is_alive()
 
-                # Handle monster retaliation if it survived
-                monster_retaliation_damage = None
-                player_health_after = None
-                if not monster_died:
-                    monster_attack_damage = self.current_monster.attack()
-                    monster_retaliation_damage = self.player.take_damage(monster_attack_damage, defense=self.player.get_defense())
-                    player_health_after = self.player.health
+        # Run combat using the combat engine
+        defeated_monster, final_action, is_weakness = self.combat_engine.run_combat_phase(self.player, self.current_monster)
 
-                # Generate single narrative for the complete combat turn
-                if monster_died:
-                    # If monster died, let victory handle the narrative (includes the killing blow)
-                    self.monsters_defeated += 1
-                    self._handle_monster_defeat(self.current_monster, selected_action, is_weakness)
-                    self.current_monster = None
-                    return
-                else:
-                    # Monster survived - describe the complete turn (player action + monster retaliation)
-                    self.narrative_engine.describe_combat_turn(
-                        self._get_action_label(selected_action),
-                        self.current_monster,
-                        damage_dealt,
-                        is_weakness,
-                        self.player,
-                        monster_retaliation_damage=monster_retaliation_damage,
-                        player_health_after=player_health_after
-                    )
-            if self.player.is_alive():
-                ui.render_status(self.player, mode="combat", enemy=self.current_monster)
+        # Check if monster was defeated during combat
+        if defeated_monster is not None:
+            # Monster was defeated
+            self.monsters_defeated += 1
+            game_should_end = self.combat_engine.handle_monster_defeat(
+                defeated_monster,
+                self.player,
+                final_action=final_action,
+                is_weakness=is_weakness
+            )
+            if game_should_end:
+                self.game_won = True
 
-    def _get_available_combat_actions(self) -> List[Action]:
-        options: List[Action] = list(self.player.abilities().keys())
-        # Only show potion option if player is injured AND has potions
-        if self.player.health < self.player.max_health and self.player.inventory.num_potions > 0:
-            options.append(Action.USE_POTION)
-        options.append(Action.FLEE)
-        return options
+            # Apply the drop that was determined when the monster was encountered
+            drop = defeated_monster.item_drop if defeated_monster.item_drop is not None else self.drop_calculator.roll_item_drop(self.player)
+            self._apply_loot(drop)
 
-    def _get_action_label(self, action: Action) -> str:
-        action_labels = {
-            Action.HOLY_SMITE: "Holy Smite",
-            Action.SWORD_SLASH: "Sword Slash",
-            Action.SHIELD_BASH: "Shield Bash",
-            Action.USE_POTION: "Use Potion",
-            Action.FLEE: "Flee",
-        }
-        return action_labels[action]
+        # Clear current monster (combat ended)
+        self.current_monster = None
 
-    def _calculate_player_damage(self, action: Action, monster: Monster) -> int:
-        ability_map = self.player.abilities()
-        dmg_fn = ability_map.get(action)
-        if dmg_fn is None:
-            return 0
-        base = dmg_fn()
-        return monster.apply_weakness_bonus(action, base)
-
-    def _handle_monster_defeat(self, monster: Monster, final_action: Optional[Action] = None, is_weakness: bool = False) -> None:
-        """Handle monster defeat: victory narration and loot rewards.
-
-        Args:
-            monster: The defeated monster
-            final_action: The action that killed the monster
-            is_weakness: Whether the final action was a weakness hit
-        """
-        item_name = self.narrative_engine.format_item_name(monster.item_drop)
-
-        # If we know the final action, include it in the victory description
-        action_label = self._get_action_label(final_action) if final_action else None
-
-        self.narrative_engine.describe_victory(
-            monster,
-            item_name,
-            self.player,
-            final_action=action_label,
-            is_weakness=is_weakness
-        )
-
-        # If boss is defeated, end the run with victory.
-        if monster.is_boss:
-            self.game_won = True
-            return
-        # Apply the drop that was determined when the monster was encountered
-        # (fallback to rolling if somehow drop wasn't set, though this shouldn't happen)
-        drop = monster.item_drop if monster.item_drop is not None else self.drop_calculator.roll_item_drop(self.player)
-        self._apply_loot(drop)
 
     def _has_all_gear(self) -> bool:
         ui.print_debug("_has_all_gear", "player.has_shield = " + str(self.player.has_shield))
