@@ -247,6 +247,52 @@ class RoomTypeOption:
         if self.spawn_weight < 0:
             raise ValueError(f"Spawn weight must be non-negative, got {self.spawn_weight}")
 
+
+@dataclass
+class CombatResult:
+    """Represents the outcome of a combat phase.
+
+    OO rationale: Encapsulates combat phase results in a type-safe structure
+    instead of using complex tuples. Makes combat outcomes self-documenting
+    and easier to work with.
+    """
+    # Combat outcome
+    defeated_monster: Optional['Monster'] = None
+    player_fled: bool = False
+
+    # Combat details (only relevant if monster was defeated)
+    final_action: Optional['Action'] = None
+    was_weakness_hit: bool = False
+
+    @property
+    def combat_ended(self) -> bool:
+        """True if combat ended (monster defeated or player fled)."""
+        return self.defeated_monster is not None or self.player_fled
+
+    @property
+    def monster_was_defeated(self) -> bool:
+        """True if a monster was defeated."""
+        return self.defeated_monster is not None
+
+    @classmethod
+    def monster_defeated(cls, monster: 'Monster', final_action: 'Action', was_weakness: bool) -> 'CombatResult':
+        """Create a result for monster defeat."""
+        return cls(
+            defeated_monster=monster,
+            final_action=final_action,
+            was_weakness_hit=was_weakness
+        )
+
+    @classmethod
+    def player_fled(cls) -> 'CombatResult':
+        """Create a result for player fleeing."""
+        return cls(player_fled=True)
+
+    @classmethod
+    def combat_continues(cls) -> 'CombatResult':
+        """Create a result for ongoing combat."""
+        return cls()
+
 @dataclass
 class WeightedOption:
     """A weighted option for random selection with validation."""

@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-import config
 import ui
-from models import Action, Monster, Player, Weakness
+from models import Action, CombatResult, Monster, Player, Weakness
 from narrative_engine import NarrativeEngine
 
 
@@ -183,7 +182,7 @@ class CombatEngine:
         # If boss is defeated, end the run with victory
         return monster.is_boss
 
-    def run_combat_phase(self, player: Player, monster: Monster) -> tuple[Optional[Monster], Optional[Action], bool]:
+    def run_combat_phase(self, player: Player, monster: Monster) -> CombatResult:
         """Run the complete combat phase until resolution.
 
         Args:
@@ -191,7 +190,7 @@ class CombatEngine:
             monster: The monster being fought
 
         Returns:
-            Tuple of (monster_if_defeated, final_action, is_weakness_hit) or (None, None, False) if fled
+            CombatResult containing the outcome of the combat phase
         """
         while player.is_alive() and monster.is_alive():
             available_actions = self.get_available_actions(player)
@@ -205,13 +204,17 @@ class CombatEngine:
             # Handle non-damage actions
             if turn_result.get("non_damage_action"):
                 if turn_result.get("flee_succeeded"):
-                    return None, None, False  # Combat ended - player fled
+                    return CombatResult.player_fled()  # Combat ended - player fled
                 continue  # Continue combat loop for potion use
 
             # Handle damage actions
             if turn_result["monster_died"]:
-                # Monster died - return monster and combat details for defeat handling
-                return monster, selected_action, turn_result["is_weakness_hit"]
+                # Monster died - return combat result with defeat details
+                return CombatResult.monster_defeated(
+                    monster,
+                    selected_action,
+                    turn_result["is_weakness_hit"]
+                )
             else:
                 # Monster survived - describe the complete turn (player action + monster retaliation)
                 self.narrative_engine.describe_combat_turn(
@@ -228,5 +231,5 @@ class CombatEngine:
             if player.is_alive():
                 ui.render_status(player, mode="combat", enemy=monster)
 
-        # Combat ended - return None to indicate completion
-        return None, None, False
+        # Combat ended - return result indicating completion
+        return CombatResult.combat_continues()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import random
-from typing import List, Optional, Protocol, Any, Callable
+from typing import List, Optional, Protocol
 
 import config
 from combat_engine import CombatEngine
@@ -10,14 +9,12 @@ from monster_generator import MonsterGenerator
 from narrative_engine import NarrativeEngine
 import ui
 from models import (
-    Action,
     ActionOption,
     DropResult,
     Monster,
     Player,
     RoomType,
     RoomTypeOption,
-    Weakness,
     WeightedOption,
 )
 from utils import RandomProvider, DefaultRandomProvider, select_weighted_random
@@ -146,24 +143,22 @@ class GameSystem:
         assert self.current_monster is not None
 
         # Run combat using the combat engine
-        defeated_monster, final_action, is_weakness = self.combat_engine.run_combat_phase(self.player, self.current_monster)
+        combat_result = self.combat_engine.run_combat_phase(self.player, self.current_monster)
 
-        # Check if monster was defeated during combat
-        if defeated_monster is not None:
+        # Process combat result
+        if combat_result.monster_was_defeated:
             # Monster was defeated
             self.monsters_defeated += 1
             game_should_end = self.combat_engine.handle_monster_defeat(
-                defeated_monster,
+                combat_result.defeated_monster,
                 self.player,
-                final_action=final_action,
-                is_weakness=is_weakness
+                final_action=combat_result.final_action,
+                is_weakness=combat_result.was_weakness_hit
             )
             if game_should_end:
                 self.game_won = True
 
-            # Apply the drop that was determined when the monster was encountered
-            drop = defeated_monster.item_drop if defeated_monster.item_drop is not None else self.drop_calculator.roll_item_drop(self.player)
-            self._apply_loot(drop)
+            self._apply_loot(combat_result.defeated_monster.item_drop)
 
         # Clear current monster (combat ended)
         self.current_monster = None
