@@ -6,17 +6,9 @@ and boss encounters based on game progress.
 
 from __future__ import annotations
 
-from typing import List, Protocol, Any
-
 import config
 from models import Monster, MonsterTemplate, Weakness
-
-
-class RandomProvider(Protocol):
-    """Protocol for random number generation (for testability)."""
-    def random(self) -> float: ...
-    def randint(self, a: int, b: int) -> int: ...
-    def choice(self, seq: List[Any]) -> Any: ...
+from utils import RandomProvider
 
 
 class MonsterGenerator:
