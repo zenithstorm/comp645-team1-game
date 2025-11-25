@@ -7,7 +7,7 @@ import sys
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from systems import GameSystem
+from game_engine import GameEngine
 
 
 def main():
@@ -31,7 +31,7 @@ def main():
 
     try:
         storyteller = LLMStoryTeller(api_key=api_key, model="gpt-4o-mini")
-        game_system = GameSystem(storyteller)
+        game_system = GameEngine(storyteller)
 
         # Start the game with Rich UI
         game_system.start_game()

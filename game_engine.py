@@ -25,7 +25,7 @@ class StoryTellerProtocol(Protocol):
     # game loop to depend on an interface instead of a concrete type.
     def track_event(self, event_type: str, description: str) -> None: ...
 
-class GameSystem:
+class GameEngine:
     # OO rationale: Orchestrator and state machine for the game flow. It
     # coordinates services (storyteller, RNG, generators) and owns session
     # state (player, current monster). Keeps domain logic cohesive while
