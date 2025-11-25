@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Protocol, Any, Callable
 
@@ -304,6 +305,19 @@ class GameSystem:
         self.monsters_defeated: int = 0
         self.game_won: bool = False
 
+    def _typewriter_print(self, text: str, delay: float = 0.015) -> None:
+        """Print text with a typewriter effect (character by character).
+
+        Args:
+            text: The text to print
+            delay: Delay between characters in seconds (default 0.015)
+        """
+        for char in text:
+            print(char, end="", flush=True)
+            if char != " ":  # Faster for spaces
+                time.sleep(delay)
+        print()  # Newline at the end
+
     def _generate_narrative(
         self,
         narrative_generator: Callable[[], str],
@@ -321,7 +335,10 @@ class GameSystem:
             print("\r" + " " * 30 + "\r", end="", flush=True)
             if event_type:
                 self.storyteller.track_event(event_type, narrative_text)
-            print(narrative_text, flush=True)
+            # Print narrative with typewriter effect
+            self._typewriter_print(narrative_text, delay=0.05)
+            # Add subtle separator after narrative for visual clarity
+            print("─" * 60, flush=True)
         except Exception as e:
             print()
             print(f"Error generating description: {e}", flush=True)
@@ -623,6 +640,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             )
 
     def _create_status_display(self) -> str:
+        """Create a formatted status display with visual separators."""
         hp = f"HP {self.player.health}/{self.player.max_health}"
         defense = f"Defense {self.player.get_defense()}"
         pots = f"Potions {self.player.inventory.num_potions}"
@@ -633,4 +651,8 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         if self.player.has_sword:
             abilities.append("Sword Slash")
         abilities_str = "Abilities: " + ", ".join(abilities)
-        return f"❤️ {hp} | {defense} | {pots} | {scrolls}\n{abilities_str}"
+
+        # Create a visually distinct status box
+        separator = "═" * 60
+        status_line = f"{hp} | {defense} | {pots} | {scrolls}"
+        return f"\n{separator}\n📜 STATUS\n{separator}\n{status_line}\n{abilities_str}\n{separator}\n"
