@@ -1,96 +1,22 @@
 from __future__ import annotations
 
-import shutil
 import time
 from typing import List, Optional
 
 import config
+from rich.console import Console, Group
+from rich.columns import Columns
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+# Global Rich console instance
+console = Console()
 
 
 def clear_terminal() -> None:
     """Clear the terminal screen using ANSI escape codes (cross-platform)."""
     print("\033[2J\033[H", end="", flush=True)
-
-
-def red(text: str) -> str:
-    """Wrap text with red ANSI color codes.
-
-    Can be combined with other formatting functions (e.g., bold(red("text"))).
-
-    Args:
-        text: The text to color red
-
-    Returns:
-        Text wrapped with red ANSI codes
-    """
-    # Remove any existing reset codes from nested formatting, then wrap
-    text_without_reset = text.replace("\033[0m", "")
-    return f"\033[31m{text_without_reset}\033[0m"
-
-
-def green(text: str) -> str:
-    """Wrap text with green ANSI color codes.
-
-    Can be combined with other formatting functions (e.g., bold(green("text"))).
-
-    Args:
-        text: The text to color green
-
-    Returns:
-        Text wrapped with green ANSI codes
-    """
-    # Remove any existing reset codes from nested formatting, then wrap
-    text_without_reset = text.replace("\033[0m", "")
-    return f"\033[32m{text_without_reset}\033[0m"
-
-
-def yellow(text: str) -> str:
-    """Wrap text with yellow ANSI color codes.
-
-    Can be combined with other formatting functions (e.g., bold(yellow("text"))).
-
-    Args:
-        text: The text to color yellow
-
-    Returns:
-        Text wrapped with yellow ANSI codes
-    """
-    # Remove any existing reset codes from nested formatting, then wrap
-    text_without_reset = text.replace("\033[0m", "")
-    return f"\033[33m{text_without_reset}\033[0m"
-
-
-def orange(text: str) -> str:
-    """Wrap text with orange ANSI color codes (using 256-color mode).
-
-    Can be combined with other formatting functions (e.g., bold(orange("text"))).
-
-    Args:
-        text: The text to color orange
-
-    Returns:
-        Text wrapped with orange ANSI codes
-    """
-    # Remove any existing reset codes from nested formatting, then wrap
-    # Using 256-color mode for orange (color 208)
-    text_without_reset = text.replace("\033[0m", "")
-    return f"\033[38;5;208m{text_without_reset}\033[0m"
-
-
-def bold(text: str) -> str:
-    """Wrap text with bold ANSI formatting codes.
-
-    Can be combined with other formatting functions (e.g., green(bold("text"))).
-
-    Args:
-        text: The text to make bold
-
-    Returns:
-        Text wrapped with bold ANSI codes
-    """
-    # Remove any existing reset codes from nested formatting, then wrap
-    text_without_reset = text.replace("\033[0m", "")
-    return f"\033[1m{text_without_reset}\033[0m"
 
 
 def typewriter_print(text: str) -> None:
@@ -106,29 +32,88 @@ def typewriter_print(text: str) -> None:
     print()  # Newline at the end
 
 
-def create_equipment_display(player) -> str:
-    """Create a formatted equipment display showing what gear the player has.
+def show_mode_header(mode: str = "exploration") -> None:
+    """Show the mode header rule with padding.
 
     Args:
-        player: Player instance to check equipment status
-
-    Returns:
-        Multi-line string showing equipment status with green bold "equipped" text
+        mode: Either "exploration" or "combat" (default: "exploration")
     """
+    # Add some padding before the rule
+    console.print()
+
+    if mode == "combat":
+        console.rule("⚔ COMBAT! ⚔")
+    else:
+        console.rule("EXPLORATION")
+
+    # Add padding after the rule
+    console.print()
+
+
+def render_status(player, mode: str = "exploration", enemy: Optional = None) -> None:
+    """Render the status display using Rich library with different modes.
+
+    Args:
+        player: Player instance to display status for
+        mode: Either "exploration" or "combat" (default: "exploration")
+        enemy: Current Monster when in combat, otherwise None
+    """
+    if mode == "combat":
+        # Combat mode: focused battle status
+        _render_combat_status(player, enemy)
+    else:
+        # Exploration mode: full status with equipment
+        _render_exploration_status(player)
+
+
+def _render_exploration_status(player) -> None:
+    """Render the full exploration status with stats, consumables, and equipment."""
     from models import DropResult
 
-    # Map DropResult to display names
+    # Calculate HP percentage and determine color
+    hp_percentage = (player.health / player.max_health) * 100 if player.max_health > 0 else 0
+    current_hp_str = str(player.health)
+
+    # Create HP text with color based on percentage
+    hp_text = Text()
+    hp_text.append("HP:  ")
+    if hp_percentage >= 75:
+        hp_text.append(current_hp_str, style="bold green")
+    elif hp_percentage >= 50:
+        hp_text.append(current_hp_str, style="bold yellow")
+    else:
+        hp_text.append(current_hp_str, style="bold red")
+    hp_text.append(f"/{player.max_health}")
+
+    # Build left panel (Stats)
+    stats_table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1))
+    stats_table.add_row(hp_text)
+    stats_table.add_row(f"Defense: {player.get_defense()}")
+
+    consumables_table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1))
+    consumables_table.add_row(f"Potions: {player.inventory.num_potions}")
+    consumables_table.add_row(f"Scrolls: {player.inventory.num_escape_scrolls}")
+
+    left_content = Group(
+        Text("Stats", style="bold"),
+        stats_table,
+        Text(""),  # Blank line
+        Text("Consumables", style="bold"),
+        consumables_table,
+    )
+
+    # Build right panel (Equipment)
     equipment_map = [
         ("Helm", DropResult.HELM),
         ("Shoulders", DropResult.PAULDRONS),
         ("Chest", DropResult.CUIRASS),
         ("Legs", DropResult.LEG_GUARDS),
         ("Boots", DropResult.BOOTS),
-        ("Sword", None),  # Special case - uses has_sword
-        ("Shield", None),  # Special case - uses has_shield
+        ("Sword", None),
+        ("Shield", None),
     ]
 
-    lines = [bold("Equipment")]
+    equipment_table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1))
     for display_name, drop_result in equipment_map:
         if drop_result is None:
             # Handle sword and shield separately
@@ -140,62 +125,68 @@ def create_equipment_display(player) -> str:
             has_item = drop_result in player.owned_armor
 
         if has_item:
-            # Combine green and bold: can be nested in either order
-            status = bold(green("equipped"))
+            status_text = Text("equipped", style="bold green")
         else:
-            status = "none"
+            status_text = Text("—", style="dim")
 
-        lines.append(f"{display_name}: {status}")
+        # Create row text: "Name: status"
+        row_text = Text()
+        row_text.append(f"{display_name}: ")
+        row_text.append(status_text)
+        equipment_table.add_row(row_text)
 
-    return "\n".join(lines)
+    right_content = Group(
+        Text("Equipment", style="bold"),
+        equipment_table,
+    )
+
+    # Create two-column layout
+    columns = Columns([left_content, right_content], equal=True, expand=True)
+
+    # Create panel with STATUS title
+    panel = Panel(columns, title="STATUS", border_style="dim")
+
+    # Print directly using Rich console
+    console.print(panel)
 
 
-def create_status_display(player) -> str:
-    """Create a formatted status display with visual separators.
-
-    Args:
-        player: Player instance to display status for
-
-    Returns:
-        Formatted status display string
-    """
-    try:
-        terminal_width = shutil.get_terminal_size().columns
-    except (OSError, AttributeError):
-        terminal_width = 80
-
-    # Calculate HP percentage and apply color coding to current HP: green >= 75%, yellow >= 50%, red < 50%
+def _render_combat_status(player, enemy) -> None:
+    """Render the focused combat status with HP, Defense, and Enemy info."""
+    # Calculate HP percentage and determine color
     hp_percentage = (player.health / player.max_health) * 100 if player.max_health > 0 else 0
-
     current_hp_str = str(player.health)
+
+    # Create HP text with color based on percentage
+    hp_text = Text()
+    hp_text.append("HP:      ")
     if hp_percentage >= 75:
-        current_hp_colored = bold(green(current_hp_str))
+        hp_text.append(current_hp_str, style="bold green")
     elif hp_percentage >= 50:
-        current_hp_colored = bold(yellow(current_hp_str))
+        hp_text.append(current_hp_str, style="bold yellow")
     else:
-        current_hp_colored = bold(red(current_hp_str))
+        hp_text.append(current_hp_str, style="bold red")
+    hp_text.append(f"/{player.max_health}")
 
-    hp = f"HP {current_hp_colored}/{player.max_health}"
+    # Create combat status table
+    battle_table = Table(show_header=False, show_edge=False, box=None, padding=(0, 1))
+    battle_table.add_row("")  # Empty line at top
+    battle_table.add_row(hp_text)
+    battle_table.add_row(f"Defense: {player.get_defense()}")
+    battle_table.add_row("")  # Empty line
 
-    defense = f"Defense {player.get_defense()}"
-    pots = f"Potions {player.inventory.num_potions}"
-    scrolls = f"Escape Scrolls {player.inventory.num_escape_scrolls}"
-    abilities = ["Holy Smite"]
-    if player.has_shield:
-        abilities.append("Shield Bash")
-    if player.has_sword:
-        abilities.append("Sword Slash")
-    abilities_str = "Abilities: " + ", ".join(abilities)
+    # Add enemy info if available
+    if enemy:
+        battle_table.add_row(f"Enemy:   {enemy.name}")
+    else:
+        battle_table.add_row("Enemy:   Unknown")
 
-    # Create equipment display
-    equipment_display = create_equipment_display(player)
+    battle_table.add_row("")  # Empty line at bottom
 
-    # Create a visually distinct status box
-    separator = "═" * terminal_width
-    status_line = f"{hp} | {defense} | {pots} | {scrolls}"
-    # Subtle exit hint in the footer
-    exit_hint = "  (Press 'x' to exit)"
-    return f"\n{separator}\n📜 STATUS\n{separator}\n{status_line}\n{abilities_str}\n{separator}\n{equipment_display}\n{separator}{exit_hint}\n"
+    # Create panel with BATTLE STATUS title
+    panel = Panel(battle_table, title="BATTLE STATUS", border_style="red")
+
+    # Print directly using Rich console
+    console.print(panel)
 
 
 def prompt_choice(title: str, options: List[str]) -> int:

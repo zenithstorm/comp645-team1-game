@@ -2,3 +2,5 @@
 # New accounts get free credits ($5-18), and gpt-4o-mini is very cheap!
 openai>=1.0.0
 
+# Rich library for beautiful terminal UI
+rich>=13.0.0
