@@ -196,18 +196,29 @@ class DropCalculator:
         """
         # Check for guaranteed progression items first
         # Shield guaranteed on 1st monster (defeated_count will be 1 after this fight)
+        # print("[DEBUG] get_drop_for_monster defeated_count =", defeated_count)
+        # print("[DEBUG] get_drop_for_monster player.has_shield =", player.has_shield)
+        # print("[DEBUG] get_drop_for_monster DropResult.SHIELD in self._remaining_gear =", DropResult.SHIELD in self._remaining_gear)
         if defeated_count == 0 and not player.has_shield and DropResult.SHIELD in self._remaining_gear:
+            # print("[DEBUG] get_drop_for_monster returning SHIELD")
             self._remaining_gear.remove(DropResult.SHIELD)
             return DropResult.SHIELD
         # Sword guaranteed on 3rd monster (defeated_count will be 3 after this fight)
         if defeated_count == 2 and not player.has_sword and DropResult.SWORD in self._remaining_gear:
+            # print("[DEBUG] get_drop_for_monster returning SWORD")
             self._remaining_gear.remove(DropResult.SWORD)
             return DropResult.SWORD
         # Otherwise, roll for a random drop (but exclude shield/sword if already dropped)
-        return self.roll_item_drop()
+        # print("[DEBUG] get_drop_for_monster rolling item drop")
+        return self.roll_item_drop(player)
 
-    def roll_item_drop(self) -> DropResult:
-        """Roll for a random item drop, excluding unique items that have already been dropped."""
+    def roll_item_drop(self, player: Player) -> DropResult:
+        """Roll for a random item drop, excluding unique items that have already been dropped.
+
+        Args:
+            player: Player instance to check current equipment (for defensive checks)
+        """
+
         # Build base weights
         weight_no_item = config.DROP_WEIGHTS["NO_ITEM"]
         weight_health_potion = config.DROP_WEIGHTS["HEALTH_POTION"]
@@ -398,7 +409,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             )
             return
         if room_type == "loot":
-            drop = self.drop_calculator.roll_item_drop()
+            drop = self.drop_calculator.roll_item_drop(self.player)
             # Generate narrative description of finding the loot
             def get_loot_description():
                 if drop == DropResult.NO_ITEM:
@@ -566,7 +577,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             return
         # Apply the drop that was determined when the monster was encountered
         # (fallback to rolling if somehow drop wasn't set, though this shouldn't happen)
-        drop = monster.item_drop if monster.item_drop is not None else self.drop_calculator.roll_item_drop()
+        drop = monster.item_drop if monster.item_drop is not None else self.drop_calculator.roll_item_drop(self.player)
         self._apply_loot(drop)
 
     def _has_all_gear(self) -> bool:
