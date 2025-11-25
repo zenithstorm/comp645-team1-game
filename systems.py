@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import random
-import shutil
-import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Protocol, Any, Callable
 
@@ -306,67 +304,6 @@ class GameSystem:
         self.monsters_defeated: int = 0
         self.game_won: bool = False
 
-    def _clear_terminal(self) -> None:
-        """Clear the terminal screen using ANSI escape codes (cross-platform)."""
-        print("\033[2J\033[H", end="", flush=True)
-
-    def _red(self, text: str) -> str:
-        """Wrap text with red ANSI color codes.
-
-        Can be combined with other formatting methods (e.g., _bold(_red("text"))).
-
-        Args:
-            text: The text to color red
-
-        Returns:
-            Text wrapped with red ANSI codes
-        """
-        # Remove any existing reset codes from nested formatting, then wrap
-        text_without_reset = text.replace("\033[0m", "")
-        return f"\033[31m{text_without_reset}\033[0m"
-
-    def _green(self, text: str) -> str:
-        """Wrap text with green ANSI color codes.
-
-        Can be combined with other formatting methods (e.g., _bold(_green("text"))).
-
-        Args:
-            text: The text to color green
-
-        Returns:
-            Text wrapped with green ANSI codes
-        """
-        # Remove any existing reset codes from nested formatting, then wrap
-        text_without_reset = text.replace("\033[0m", "")
-        return f"\033[32m{text_without_reset}\033[0m"
-
-    def _bold(self, text: str) -> str:
-        """Wrap text with bold ANSI formatting codes.
-
-        Can be combined with other formatting methods (e.g., _green(_bold("text"))).
-
-        Args:
-            text: The text to make bold
-
-        Returns:
-            Text wrapped with bold ANSI codes
-        """
-        # Remove any existing reset codes from nested formatting, then wrap
-        text_without_reset = text.replace("\033[0m", "")
-        return f"\033[1m{text_without_reset}\033[0m"
-
-    def _typewriter_print(self, text: str) -> None:
-        """Print text with a typewriter effect (character by character).
-
-        Args:
-            text: The text to print
-        """
-        for char in text:
-            print(char, end="", flush=True)
-            if char != " ":  # Faster for spaces
-                time.sleep(config.TYPEWRITER_DELAY)
-        print()  # Newline at the end
-
     def _generate_narrative(
         self,
         narrative_generator: Callable[[], str],
@@ -379,7 +316,7 @@ class GameSystem:
             event_type: Type of event to track (e.g., "encounter", "victory", "loot") or None to skip tracking
         """
         # Clear terminal before showing new narrative
-        self._clear_terminal()
+        ui.clear_terminal()
         print("Story Teller is thinking...", end="", flush=True)
         try:
             narrative_text = narrative_generator()
@@ -387,9 +324,10 @@ class GameSystem:
             if event_type:
                 self.storyteller.track_event(event_type, narrative_text)
             # Print narrative with typewriter effect
-            self._typewriter_print(narrative_text)
+            ui.typewriter_print(narrative_text)
             # Add subtle separator after narrative for visual clarity
             try:
+                import shutil
                 terminal_width = shutil.get_terminal_size().columns
             except (OSError, AttributeError):
                 terminal_width = 80
@@ -432,15 +370,15 @@ Echoing goblin screams from the labyrinth below tell you where they fled to hide
 Weak but alive, you feel the quiet warmth of your connection to the Light. It has not abandoned you. Not yet."""
         self.storyteller.track_event("game_start", opening_text)
         # Clear terminal and show opening narrative
-        self._clear_terminal()
-        self._typewriter_print(opening_text)
-        print(self._create_status_display(), flush=True)
+        ui.clear_terminal()
+        ui.typewriter_print(opening_text)
+        print(ui.create_status_display(self.player), flush=True)
         while self.player.is_alive() and not self.game_won:
             if self.current_monster is None:
                 self._exploration_phase()
             else:
                 self._combat_phase()
-            print(self._create_status_display(), flush=True)
+            print(ui.create_status_display(self.player), flush=True)
         if self.game_won:
             victory_text = "The last foe falls; somewhere, an exit reveals itself."
             self.storyteller.track_event("game_victory", victory_text)
@@ -592,7 +530,7 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                         "combat"
                     )
             if self.player.is_alive():
-                print(self._create_status_display(), flush=True)
+                print(ui.create_status_display(self.player), flush=True)
 
     def _get_available_combat_actions(self) -> List[Action]:
         options: List[Action] = list(self.player.abilities().keys())
@@ -695,71 +633,3 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
                 lambda: self.storyteller.describe_all_gear_recovered(self.player),
                 None
             )
-
-    def _create_equipment_display(self) -> str:
-        """Create a formatted equipment display showing what gear the player has.
-
-        Returns:
-            Multi-line string showing equipment status with green bold "equipped" text
-        """
-        from models import DropResult
-
-        # Map DropResult to display names
-        equipment_map = [
-            ("Helm", DropResult.HELM),
-            ("Shoulders", DropResult.PAULDRONS),
-            ("Chest", DropResult.CUIRASS),
-            ("Legs", DropResult.LEG_GUARDS),
-            ("Boots", DropResult.BOOTS),
-            ("Sword", None),  # Special case - uses has_sword
-            ("Shield", None),  # Special case - uses has_shield
-        ]
-
-        lines = [self._bold("Equipment")]
-        for display_name, drop_result in equipment_map:
-            if drop_result is None:
-                # Handle sword and shield separately
-                if display_name == "Sword":
-                    has_item = self.player.has_sword
-                else:  # Shield
-                    has_item = self.player.has_shield
-            else:
-                has_item = drop_result in self.player.owned_armor
-
-            if has_item:
-                # Combine green and bold: can be nested in either order
-                status = self._bold(self._green("equipped"))
-            else:
-                status = "none"
-
-            lines.append(f"{display_name}: {status}")
-
-        return "\n".join(lines)
-
-    def _create_status_display(self) -> str:
-        """Create a formatted status display with visual separators."""
-        try:
-            terminal_width = shutil.get_terminal_size().columns
-        except (OSError, AttributeError):
-            terminal_width = 80
-
-        hp = f"HP {self.player.health}/{self.player.max_health}"
-        defense = f"Defense {self.player.get_defense()}"
-        pots = f"Potions {self.player.inventory.num_potions}"
-        scrolls = f"Escape Scrolls {self.player.inventory.num_escape_scrolls}"
-        abilities = ["Holy Smite"]
-        if self.player.has_shield:
-            abilities.append("Shield Bash")
-        if self.player.has_sword:
-            abilities.append("Sword Slash")
-        abilities_str = "Abilities: " + ", ".join(abilities)
-
-        # Create equipment display
-        equipment_display = self._create_equipment_display()
-
-        # Create a visually distinct status box
-        separator = "═" * terminal_width
-        status_line = f"{hp} | {defense} | {pots} | {scrolls}"
-        # Subtle exit hint in the footer
-        exit_hint = "  (Press 'x' to exit)"
-        return f"\n{separator}\n📜 STATUS\n{separator}\n{status_line}\n{abilities_str}\n{separator}\n{equipment_display}\n{separator}{exit_hint}\n"
