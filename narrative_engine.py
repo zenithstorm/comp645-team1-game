@@ -30,7 +30,7 @@ class NarrativeEngine:
         """
         self.storyteller = storyteller
 
-    def generate_and_display(
+    def describe_and_narrate(
         self,
         narrative_generator: Callable[[], str],
         event_type: Optional[str],
@@ -75,7 +75,7 @@ class NarrativeEngine:
             return "a sword"
         return item.name.replace("_", " ").lower()
 
-    def describe_opening(self) -> str:
+    def narrate_opening(self) -> str:
         """Get the opening narrative text for the game."""
         return """You awaken on the cold stone floor of a ruined hall, your head pounding and your armor gone. The air reeks of smoke, iron, and old blood.
 
@@ -94,46 +94,46 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
         return "The last foe falls; somewhere, an exit reveals itself."
 
     # Convenience methods for common narrative generation patterns
-    def generate_empty_room(self, mode: str = "exploration") -> None:
+    def describe_empty_room(self, mode: str = "exploration") -> None:
         """Generate narrative for an empty room."""
-        self.generate_and_display(
+        self.describe_and_narrate(
             lambda: self.storyteller.describe_empty_room(),
             None,  # Don't track empty rooms as significant events
             mode
         )
 
-    def generate_prayer(self, player: Player, mode: str = "exploration") -> None:
+    def describe_prayer(self, player: Player, mode: str = "exploration") -> None:
         """Generate narrative for prayer/restoration."""
-        self.generate_and_display(
+        self.describe_and_narrate(
             lambda: self.storyteller.describe_pray(player),
             None,  # Don't track prayer as a significant event
             mode
         )
 
-    def generate_potion_use(self, player: Player, mode: str = "combat") -> None:
+    def describe_potion_use(self, player: Player, mode: str = "combat") -> None:
         """Generate narrative for potion use."""
-        self.generate_and_display(
+        self.describe_and_narrate(
             lambda: self.storyteller.describe_potion_use(player),
             None,  # Don't track potion use as a significant event
             mode
         )
 
-    def generate_loot_find(self, drop: DropResult, player: Player) -> None:
+    def describe_loot_find(self, drop: DropResult, player: Player) -> None:
         """Generate narrative for finding loot."""
         def get_loot_description():
             if drop == DropResult.NO_ITEM:
                 return self.storyteller.describe_empty_room()
             return self.storyteller.describe_loot_find(drop, player)
 
-        self.generate_and_display(
+        self.describe_and_narrate(
             get_loot_description,
             "loot",
             "exploration"
         )
 
-    def generate_encounter(self, monster, drop: DropResult, player: Player) -> None:
+    def describe_encounter(self, monster, drop: DropResult, player: Player) -> None:
         """Generate narrative for monster encounter."""
-        self.generate_and_display(
+        self.describe_and_narrate(
             lambda: self.storyteller.describe_encounter(
                 monster.name,
                 monster.description,
@@ -144,20 +144,20 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             "combat"
         )
 
-    def generate_flee_attempt(self, succeeded: bool, monster_name: str) -> None:
+    def describe_flee_attempt(self, succeeded: bool, monster_name: str) -> None:
         """Generate narrative for flee attempt."""
-        self.generate_and_display(
+        self.describe_and_narrate(
             lambda: self.storyteller.describe_flee(succeeded, monster_name),
             "flee",
             "combat"
         )
 
-    def generate_combat_turn(self, action_label: str, monster, damage_dealt: int,
+    def describe_combat_turn(self, action_label: str, monster, damage_dealt: int,
                            is_weakness: bool, player: Player,
                            monster_retaliation_damage: Optional[int] = None,
                            player_health_after: Optional[int] = None) -> None:
         """Generate narrative for a complete combat turn."""
-        self.generate_and_display(
+        self.describe_and_narrate(
             lambda: self.storyteller.describe_combat_turn(
                 action_label,
                 monster.name,
@@ -172,10 +172,10 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             "combat"
         )
 
-    def generate_victory(self, monster, item_name: Optional[str], player: Player,
+    def describe_victory(self, monster, item_name: Optional[str], player: Player,
                         final_action: Optional[str] = None, is_weakness: bool = False) -> None:
         """Generate narrative for monster victory."""
-        self.generate_and_display(
+        self.describe_and_narrate(
             lambda: self.storyteller.describe_victory(
                 monster.name,
                 monster.description,
@@ -188,9 +188,9 @@ Weak but alive, you feel the quiet warmth of your connection to the Light. It ha
             "combat"
         )
 
-    def generate_all_gear_recovered(self, player: Player) -> None:
+    def describe_all_gear_recovered(self, player: Player) -> None:
         """Generate narrative for recovering all gear."""
-        self.generate_and_display(
+        self.describe_and_narrate(
             lambda: self.storyteller.describe_all_gear_recovered(player),
             None,
             "exploration"

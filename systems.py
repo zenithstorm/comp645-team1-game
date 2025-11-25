@@ -65,7 +65,7 @@ class GameSystem:
 
 
     def start_game(self) -> None:
-        opening_text = self.narrative_engine.describe_opening()
+        opening_text = self.narrative_engine.narrate_opening()
         self.storyteller.track_event("game_start", opening_text)
         # Clear terminal and show opening narrative
         ui.clear_terminal()
@@ -103,10 +103,10 @@ class GameSystem:
         if action_choice == "proceed":
             self._explore_room()
         elif action_choice == "pray":
-            self.narrative_engine.generate_prayer(self.player)
+            self.narrative_engine.describe_prayer(self.player)
             self.player.pray_for_restoration()
         elif action_choice == "potion":
-            self.narrative_engine.generate_potion_use(self.player, "exploration")
+            self.narrative_engine.describe_potion_use(self.player, "exploration")
         else:
             raise ValueError(f"Invalid selection: {action_choice}")
 
@@ -114,11 +114,11 @@ class GameSystem:
         ui.print_debug("_explore_room", "monsters_defeated = " + str(self.monsters_defeated))
         room_type = self._select_random_room_type()
         if room_type == RoomType.EMPTY.value:
-            self.narrative_engine.generate_empty_room()
+            self.narrative_engine.describe_empty_room()
             return
         if room_type == RoomType.LOOT.value:
             drop = self.drop_calculator.roll_item_drop(self.player)
-            self.narrative_engine.generate_loot_find(drop, self.player)
+            self.narrative_engine.describe_loot_find(drop, self.player)
             # Apply the loot after showing the description
             self._apply_loot(drop)
             return
@@ -130,7 +130,7 @@ class GameSystem:
         drop = self.drop_calculator.get_drop_for_monster(self.monsters_defeated, self.player)
         self.current_monster.item_drop = drop
         # Generate full narrative encounter description from LLM
-        self.narrative_engine.generate_encounter(self.current_monster, drop, self.player)
+        self.narrative_engine.describe_encounter(self.current_monster, drop, self.player)
 
     def _select_random_room_type(self) -> str:
         room_type_weights = config.ROOM_TYPE_WEIGHTS
@@ -160,10 +160,10 @@ class GameSystem:
             selected_index = ui.prompt_choice("⚔️ In battle, choose your action:", action_labels)
             selected_action = available_actions[selected_index]
             if selected_action == Action.USE_POTION:
-                self.narrative_engine.generate_potion_use(self.player)
+                self.narrative_engine.describe_potion_use(self.player)
             elif selected_action == Action.FLEE:
                 flee_succeeded = self.player.attempt_flee(self.random_provider.random)
-                self.narrative_engine.generate_flee_attempt(flee_succeeded, self.current_monster.name)
+                self.narrative_engine.describe_flee_attempt(flee_succeeded, self.current_monster.name)
                 if flee_succeeded:
                     self.current_monster = None
                     return
@@ -198,7 +198,7 @@ class GameSystem:
                     return
                 else:
                     # Monster survived - describe the complete turn (player action + monster retaliation)
-                    self.narrative_engine.generate_combat_turn(
+                    self.narrative_engine.describe_combat_turn(
                         self._get_action_label(selected_action),
                         self.current_monster,
                         damage_dealt,
@@ -249,7 +249,7 @@ class GameSystem:
         # If we know the final action, include it in the victory description
         action_label = self._get_action_label(final_action) if final_action else None
 
-        self.narrative_engine.generate_victory(
+        self.narrative_engine.describe_victory(
             monster,
             item_name,
             self.player,
@@ -306,4 +306,4 @@ class GameSystem:
         was_complete_before = self._has_all_gear()
         self.player.add_armor_piece(drop)
         if not was_complete_before and self._has_all_gear():
-            self.narrative_engine.generate_all_gear_recovered(self.player)
+            self.narrative_engine.describe_all_gear_recovered(self.player)
